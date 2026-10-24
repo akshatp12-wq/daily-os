@@ -24,7 +24,7 @@ function h(tag, props = {}, ...kids) {
 }
 
 // ---- State ----
-const fresh = () => ({ v: 1, blocks: [], timer: null, lastCat: 'job' });
+const fresh = () => ({ v: 1, blocks: [], timer: null, lastCat: 'work' });
 let state = load(), saveWarned = false;
 function load() {
   try {
@@ -406,6 +406,79 @@ async function restore(f) {
   save(); closeOverlay(); render();
   toast(`Restored ${state.blocks.length} blocks`, 'Undo', () => { state = prev; save(); render(); }, 6000);
 }
+
+// ---- Timer tab (iPhone) ----
+function renderTimerTab() {
+  const cats = document.getElementById('timer-cats');
+  const status = document.getElementById('timer-status');
+  if (!cats) return;
+  const today = L.dayKeyOf(Date.now());
+  cats.replaceChildren(...L.CATS.map((c) => {
+    const on = !!state.timer && state.timer.cat === c.id;
+    const todayMins = mins(today, 'actual', c.id);
+    const el = h('button', {
+      class: 'tcat' + (on ? ' on' : ''),
+      style: `--c:${c.color}`,
+      'aria-pressed': on ? 'true' : 'false',
+      onclick: () => { toggleTimer(c.id); renderTimerTab(); }
+    },
+      h('div', { class: 'tcat-left' },
+        h('div', { class: 'tcat-dot' }),
+        h('div', { class: 'tcat-name' }, c.name)),
+      h('div', { class: 'tcat-right' },
+        h('div', { class: 'tcat-elapsed' }, on ? fmtDur(Date.now() - state.timer.startedAt) : (todayMins ? fmtH(todayMins) : '–')),
+        h('div', { class: 'tcat-today' }, on ? 'running' : (todayMins ? 'today' : ''))));
+    return el;
+  }));
+  if (state.timer) {
+    const c = catOf(state.timer.cat);
+    status.textContent = `${c.name} running — tap to stop`;
+  } else {
+    status.textContent = 'Tap a category to start timing';
+  }
+}
+
+setInterval(() => {
+  if (state.timer) {
+    const on = document.querySelector('.tcat.on .tcat-elapsed');
+    if (on) on.textContent = fmtDur(Date.now() - state.timer.startedAt);
+  }
+}, 1000);
+
+// ---- Tabs ----
+function switchTab(name) {
+  const panes = { planner: document.getElementById('pane-planner'), timer: document.getElementById('pane-timer') };
+  const tabs = { planner: document.getElementById('tab-planner'), timer: document.getElementById('tab-timer') };
+  if (!panes.planner || !panes.timer) return;
+  for (const [k, el] of Object.entries(panes)) { el.classList.toggle('active', k === name); }
+  for (const [k, el] of Object.entries(tabs)) { el.classList.toggle('sel', k === name); el.setAttribute('aria-selected', k === name ? 'true' : 'false'); }
+  if (name === 'timer') renderTimerTab();
+}
+document.getElementById('tab-planner') && document.getElementById('tab-planner').addEventListener('click', () => switchTab('planner'));
+document.getElementById('tab-timer') && document.getElementById('tab-timer').addEventListener('click', () => switchTab('timer'));
+
+// ---- Swipe to change day (on the scroller) ----
+let swipe = null;
+scroller.addEventListener('touchstart', (e) => {
+  if (drag || e.touches.length !== 1) return;
+  swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: false };
+}, { passive: true });
+scroller.addEventListener('touchmove', (e) => {
+  if (!swipe || drag) return;
+  const dx = e.touches[0].clientX - swipe.x, dy = e.touches[0].clientY - swipe.y;
+  if (!swipe.locked) {
+    if (Math.abs(dy) > 10) { swipe = null; return; } // vertical scroll wins
+    if (Math.abs(dx) > 10) swipe.locked = true;
+  }
+}, { passive: true });
+scroller.addEventListener('touchend', (e) => {
+  if (!swipe || !swipe.locked) { swipe = null; return; }
+  const dx = e.changedTouches[0].clientX - swipe.x;
+  swipe = null;
+  if (Math.abs(dx) < 60) return;
+  goto(L.addDays(view, dx < 0 ? 1 : -1));
+}, { passive: true });
+scroller.addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
 
 // ---- Wiring ----
 const goto = (key) => { view = key; closeOverlay(); render(); scrollToDefault(); };

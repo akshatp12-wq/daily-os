@@ -2,11 +2,11 @@
 export const STEP = 15;
 export const CAPACITY_MIN = 960;
 export const CATS = [
-  { id: 'job', name: 'Job', color: '#2563eb' },
-  { id: 'admin', name: 'Admin', color: '#7c3aed' },
+  { id: 'work', name: 'Work', color: '#2563eb' },
   { id: 'career', name: 'Career', color: '#059669' },
-  { id: 'personal', name: 'Personal', color: '#db2777' },
-  { id: 'dev', name: 'Development', color: '#ea580c' },
+  { id: 'self', name: 'Self', color: '#ea580c' },
+  { id: 'life', name: 'Life', color: '#7c3aed' },
+  { id: 'drift', name: 'Drift', color: '#dc2626' },
 ];
 export const catName = (id) => (CATS.find((c) => c.id === id) || CATS[0]).name;
 

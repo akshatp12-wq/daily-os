@@ -23,7 +23,8 @@ button,label.btn{font:inherit;color:inherit;background:var(--panel);border:1px s
 button:active{opacity:.7}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 button.danger{color:var(--bad)}
-#app{height:100vh;height:100dvh;display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"top" "main" "timers";padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#app{height:100vh;height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#pane-planner{display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"top" "main" "timers";flex:1;min-height:0}
 #top{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
 .nav{display:flex;align-items:center;gap:6px}
 #dayLabel{font-weight:600;font-size:17px;min-width:118px;text-align:center}
@@ -34,7 +35,7 @@ button.danger{color:var(--bad)}
 .cap.warn #capFill{background:var(--warn)}.cap.over #capFill{background:var(--over)}
 .cap.over #capText{color:var(--over);font-weight:600}
 #capText{font-size:12px;color:var(--muted);margin-top:3px}
-#timers{grid-area:timers;display:flex;gap:8px;padding:8px 12px;overflow-x:auto;border-top:1px solid var(--line);background:var(--panel)}
+#timers{grid-area:timers;display:flex;gap:8px;padding:8px 12px;overflow-x:auto;border-top:1px solid var(--line);background:var(--panel);min-height:0}
 .tbtn{flex:0 0 auto;justify-content:flex-start;min-width:112px;padding:6px 12px;flex-direction:column;align-items:flex-start;gap:0;text-align:left}
 .tbtn .tn{display:flex;align-items:center;gap:8px;font-weight:600}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--c);flex:0 0 auto}
@@ -42,7 +43,7 @@ button.danger{color:var(--bad)}
 .tbtn.on{background:color-mix(in srgb,var(--c) 18%,var(--panel));border-color:var(--c);box-shadow:0 0 0 1px var(--c) inset}
 .tbtn.on .ts{color:var(--fg);font-weight:600}
 @media (min-width:900px),(orientation:landscape) and (min-width:700px){
- #app{grid-template-columns:280px 1fr;grid-template-rows:auto 1fr;grid-template-areas:"top main" "timers main"}
+ #pane-planner{grid-template-columns:280px 1fr;grid-template-rows:auto 1fr;grid-template-areas:"top main" "timers main"}
  #top{flex-direction:column;align-items:stretch;border-bottom:0;border-right:1px solid var(--line);padding:16px 16px 8px}
  .nav{justify-content:space-between}.cap{flex:0 0 auto}
  #timers{flex-direction:column;overflow-x:visible;overflow-y:auto;border-top:0;border-right:1px solid var(--line);padding:8px 16px 16px}
@@ -98,33 +99,71 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
 #toast button{background:transparent;border:0;color:#93c5fd;font-weight:600}
 #toast:not(.act){padding:12px 16px}#toast:not(.act) button{display:none}
 input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+/* ---- Tabs ---- */
+#tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel);padding:0 12px}
+.tab{flex:1;background:none;border:none;border-bottom:3px solid transparent;border-radius:0;min-height:44px;font-weight:600;font-size:15px;color:var(--muted);padding:0}
+.tab.sel{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-pane{display:none;height:100%}
+.tab-pane.active{display:flex;flex-direction:column;height:100%}
+/* iPad layout: tabs inside the right panel, above main */
+@media (min-width:900px),(orientation:landscape) and (min-width:700px){
+  #tabs{display:none}
+  #pane-planner{display:flex!important;flex-direction:column;height:100%}
+  #pane-timer{display:none!important}
+}
+/* ---- iPhone timer tab ---- */
+#timer-view{display:flex;flex-direction:column;flex:1;gap:0;overflow:hidden;background:var(--bg)}
+#timer-cats{display:flex;flex-direction:column;gap:10px;padding:16px;flex:1;overflow-y:auto}
+.tcat{display:flex;align-items:center;justify-content:space-between;min-height:72px;padding:12px 18px;border-radius:16px;background:color-mix(in srgb,var(--c) 14%,var(--panel));border:2px solid color-mix(in srgb,var(--c) 30%,transparent);gap:12px}
+.tcat.on{background:color-mix(in srgb,var(--c) 26%,var(--panel));border-color:var(--c);box-shadow:0 0 0 2px var(--c) inset}
+.tcat-left{display:flex;align-items:center;gap:14px}
+.tcat-dot{width:18px;height:18px;border-radius:50%;background:var(--c);flex:0 0 auto}
+.tcat-name{font-size:20px;font-weight:700;color:var(--fg)}
+.tcat-right{text-align:right}
+.tcat-elapsed{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--fg)}
+.tcat-today{font-size:13px;color:var(--muted)}
+#timer-status{padding:12px 16px;border-top:1px solid var(--line);background:var(--panel);text-align:center;font-size:13px;color:var(--muted);min-height:48px;display:flex;align-items:center;justify-content:center}
 </style>
 </head>
 <body>
 <div id="app">
-  <header id="top">
-    <div class="nav">
-      <button id="prev" aria-label="Previous day">‹</button>
-      <div id="dayLabel"></div>
-      <button id="next" aria-label="Next day">›</button>
-    </div>
-    <button id="todayBtn">Today</button>
-    <div class="cap" id="cap"><div class="capbar"><div id="capFill"></div></div><div id="capText"></div></div>
-    <button id="copyBtn">Copy plan → actual</button>
-    <button id="menuBtn">Export / Backup</button>
-  </header>
-  <nav id="timers" aria-label="Timers"></nav>
-  <main id="main">
-    <div class="heads"><div></div><div>Plan<span id="planTot"></span></div><div>Actual<span id="actTot"></span></div></div>
-    <div id="scroller">
-      <div id="grid">
-        <div id="gutter"></div>
-        <div class="col plan" data-layer="plan"></div>
-        <div class="col actual" data-layer="actual"></div>
-        <div id="now"></div>
+  <div id="tabs">
+    <button class="tab sel" id="tab-planner" aria-selected="true">Planner</button>
+    <button class="tab" id="tab-timer" aria-selected="false">Timer</button>
+  </div>
+  <!-- Planner pane -->
+  <div class="tab-pane active" id="pane-planner">
+    <header id="top">
+      <div class="nav">
+        <button id="prev" aria-label="Previous day">‹</button>
+        <div id="dayLabel"></div>
+        <button id="next" aria-label="Next day">›</button>
       </div>
+      <button id="todayBtn">Today</button>
+      <div class="cap" id="cap"><div class="capbar"><div id="capFill"></div></div><div id="capText"></div></div>
+      <button id="copyBtn">Copy plan → actual</button>
+      <button id="menuBtn">Export / Backup</button>
+    </header>
+    <nav id="timers" aria-label="Timers"></nav>
+    <main id="main">
+      <div class="heads"><div></div><div>Plan<span id="planTot"></span></div><div>Actual<span id="actTot"></span></div></div>
+      <div id="scroller">
+        <div id="grid">
+          <div id="gutter"></div>
+          <div class="col plan" data-layer="plan"></div>
+          <div class="col actual" data-layer="actual"></div>
+          <div id="now"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <!-- Timer pane (iPhone) -->
+  <div class="tab-pane" id="pane-timer">
+    <div id="timer-view">
+      <div id="timer-cats" aria-label="Category timers"></div>
+      <div id="timer-status">Tap a category to start timing</div>
     </div>
-  </main>
+  </div>
 </div>
 <div id="scrim"></div>
 <div id="toast" role="status"><span></span><button>Undo</button></div>

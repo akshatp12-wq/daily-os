@@ -1,0 +1,8 @@
+{
+  "name": "daily-os",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "TZ=America/Chicago node --test"
+  }
+}

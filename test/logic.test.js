@@ -78,6 +78,37 @@ test('ICS folding at 75 octets', () => {
   assert.ok(unfolded.includes('SUMMARY:' + L.icsEscape(long)));
 });
 
+test('month grid', () => {
+  const g = L.monthGrid(2026, 10);
+  assert.equal(g.length, 42);
+  assert.deepEqual([g[0].key, g[0].inMonth, g[4].key, g[4].inMonth, g[41].key], ['2026-09-27', false, '2026-10-01', true, '2026-11-07']);
+  assert.equal(g.filter((c) => c.inMonth).length, 31);
+  assert.equal(L.monthGrid(2027, 2).filter((c) => c.inMonth).length, 28);
+  assert.equal(L.monthGrid(2026, 11)[0].key, '2026-11-01');
+});
+
+test('merge blocks from another device', () => {
+  const mine = [blk({ id: 'a', start: 60, end: 120 })];
+  const theirs = [blk({ id: 'a', start: 0, end: 15 }), blk({ id: 'b', start: 90, end: 150 }), blk({ id: 'c', start: 120, end: 180 }), blk({ id: 'd', start: 150, end: 165 })];
+  const r = L.mergeBlocks(mine, theirs);
+  assert.deepEqual(r.added.map((b) => b.id), ['c']);
+  assert.deepEqual([r.dup, r.clash], [1, 2]);
+  assert.equal(mine.length, 1);
+});
+
+test('migrate v1 categories', () => {
+  const v1 = { v: 1, lastCat: 'dev', timer: { cat: 'job', startedAt: 1 }, blocks: [
+    blk({ id: 'a', cat: 'job', title: 'Job' }), blk({ id: 'b', cat: 'admin', title: 'Expenses', start: 15, end: 30 }),
+    blk({ id: 'c', cat: 'personal', title: 'Personal', start: 30, end: 45 }), blk({ id: 'd', cat: 'dev', title: 'Development', start: 45, end: 60 }),
+    blk({ id: 'e', cat: 'career', title: 'Coffee chat', start: 60, end: 75 })] };
+  assert.equal(L.validateData(v1), false);
+  const m = L.migrate(v1);
+  assert.equal(L.validateData(m), true);
+  assert.deepEqual(m.blocks.map((b) => [b.cat, b.title]), [['work', 'Work'], ['life', 'Expenses'], ['life', 'Life'], ['self', 'Self'], ['career', 'Coffee chat']]);
+  assert.deepEqual([m.lastCat, m.timer.cat], ['self', 'work']);
+  assert.equal('lastCat' in L.migrate({ v: 1, blocks: [] }), false);
+});
+
 test('data validation', () => {
   assert.equal(L.validateData({ v: 1, blocks: [blk({})], timer: null }), true);
   assert.equal(L.validateData({ v: 2, blocks: [] }), false);

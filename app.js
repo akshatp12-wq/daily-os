@@ -30,11 +30,26 @@ function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return fresh();
-    const d = JSON.parse(raw);
+    const d = L.migrate(JSON.parse(raw));
     if (L.validateData(d)) return { ...fresh(), ...d };
     localStorage.setItem(KEY + '.bad', raw);
   } catch {}
   return fresh();
+}
+// The previous version set aside data that used the old category names. Bring it back once.
+function recoverStash() {
+  try {
+    const raw = localStorage.getItem(KEY + '.bad');
+    if (!raw) return;
+    const d = L.migrate(JSON.parse(raw));
+    if (!L.validateData(d)) return;
+    const r = L.mergeBlocks(state.blocks, d.blocks);
+    state.blocks.push(...r.added);
+    localStorage.setItem(KEY + '.v1', raw);
+    localStorage.removeItem(KEY + '.bad');
+    save();
+    if (r.added.length) setTimeout(() => toast(`Recovered ${r.added.length} block${r.added.length === 1 ? '' : 's'} from before the category update`, '', null, 4000), 500);
+  } catch {}
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); saveWarned = false; }
@@ -78,8 +93,42 @@ function render() {
   $('#planTot').textContent = planned ? fmtH(planned) : '';
   $('#actTot').textContent = act ? fmtH(act) : '';
   renderTimers();
+  renderMonth();
+  renderTimerTab();
   renderGrid();
   tick();
+}
+
+// ---- Month calendar ----
+const WD = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const monthOf = (key) => L.parseKey(key).slice(0, 2);
+const shiftMonth = ([y, m], n) => { const d = new Date(y, m - 1 + n, 1); return [d.getFullYear(), d.getMonth() + 1]; };
+let monthCur = monthOf(view);
+function monthEl([y, m], onNav, onPick) {
+  const today = L.dayKeyOf(Date.now()), has = new Set(state.blocks.map((b) => b.day));
+  return h('div', { class: 'month' },
+    h('div', { class: 'mhead' },
+      h('button', { 'aria-label': 'Previous month', onclick: () => onNav(-1) }, '‹'),
+      h('b', {}, new Date(y, m - 1, 1).toLocaleDateString([], { month: 'long', year: 'numeric' })),
+      h('button', { 'aria-label': 'Next month', onclick: () => onNav(1) }, '›')),
+    h('div', { class: 'mgrid' },
+      WD.map((d) => h('div', { class: 'mwd', 'aria-hidden': 'true' }, d)),
+      L.monthGrid(y, m).map((c) => h('button', {
+        class: `mday${c.inMonth ? '' : ' out'}${c.key === today ? ' today' : ''}${c.key === view ? ' sel' : ''}${has.has(c.key) ? ' has' : ''}`,
+        'data-key': c.key, 'aria-label': fmtDay(c.key), 'aria-current': c.key === view ? 'date' : null,
+        onclick: () => onPick(c.key),
+      }, String(c.day)))));
+}
+function renderMonth() {
+  $('#month').replaceChildren(monthEl(monthCur, (n) => { monthCur = shiftMonth(monthCur, n); renderMonth(); }, (k) => goto(k)));
+}
+// Phone: the rail is hidden, so tapping the date opens the month as a sheet.
+function openMonthSheet() {
+  let cur = monthOf(view);
+  const el = h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Pick a day' });
+  const draw = () => el.replaceChildren(monthEl(cur, (n) => { cur = shiftMonth(cur, n); draw(); }, (k) => goto(k)), h('button', { onclick: closeOverlay }, 'Close'));
+  draw();
+  showOverlay(el, 'sheet', null, true);
 }
 
 function renderTimers() {
@@ -125,6 +174,8 @@ function tick() {
   if (!t) return;
   const ts = document.querySelector(`#timers [data-cat="${t.cat}"] .ts`);
   if (ts) ts.textContent = '● ' + fmtDur(now - t.startedAt);
+  const big = document.querySelector('.tcat.on .tcat-elapsed');
+  if (big) big.textContent = fmtDur(now - t.startedAt);
   const run = document.getElementById('run');
   if (run) run.style.height = Math.max(6, yOf(view, Math.min(now, L.dayEnd(view))) - yOf(view, t.startedAt)) + 'px';
 }
@@ -378,8 +429,14 @@ function openMenu() {
     list.forEach((b) => { b.seq = (b.seq || 0) + 1; });
     save(); build();
   };
+  let fileMode = 'restore';
   const fileIn = h('input', { type: 'file', accept: '.json,application/json' });
-  fileIn.addEventListener('change', () => restore(fileIn.files && fileIn.files[0]));
+  fileIn.addEventListener('change', () => {
+    const f = fileIn.files && fileIn.files[0];
+    fileIn.value = '';
+    (fileMode === 'merge' ? mergeFile : restore)(f);
+  });
+  const pick = (mode) => () => { fileMode = mode; fileIn.click(); };
   const el = h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Export and backup' },
     h('h3', {}, 'Export to Calendar'),
     seg([['day', 'Day'], ['week', 'Week']], () => scope, (v) => { scope = v; }),
@@ -389,7 +446,9 @@ function openMenu() {
     h('p', { class: 'muted' }, 'Choose Calendar or Save to Files, then open the file and Add All. Use a dedicated “Daily OS” calendar so you can delete it in one step.'),
     h('hr'),
     h('h3', {}, 'Backup'),
-    h('div', { class: 'row' }, h('button', { onclick: () => deliver(backup) }, 'Back up (JSON)'), h('button', { onclick: () => fileIn.click() }, 'Restore…')),
+    h('div', { class: 'row' }, h('button', { onclick: () => deliver(backup) }, 'Back up (JSON)'), h('button', { onclick: pick('restore') }, 'Restore…')),
+    h('button', { onclick: pick('merge') }, 'Merge from iPhone…'),
+    h('p', { class: 'muted' }, 'Restore replaces everything on this device. Merge only adds blocks from the iPhone’s file and never overwrites what’s here.'),
     fileIn,
     h('button', { onclick: closeOverlay }, 'Close'));
   build();
@@ -399,7 +458,7 @@ function openMenu() {
 async function restore(f) {
   if (!f) return;
   let d;
-  try { d = JSON.parse(await f.text()); } catch { return toast('Not a valid backup file'); }
+  try { d = L.migrate(JSON.parse(await f.text())); } catch { return toast('Not a valid backup file'); }
   if (!L.validateData(d)) return toast(d && d.v !== 1 ? 'Unsupported backup version' : 'Backup failed validation');
   const prev = state;
   state = { ...fresh(), ...d };
@@ -407,81 +466,87 @@ async function restore(f) {
   toast(`Restored ${state.blocks.length} blocks`, 'Undo', () => { state = prev; save(); render(); }, 6000);
 }
 
-// ---- Timer tab (iPhone) ----
+async function mergeFile(f) {
+  if (!f) return;
+  let d;
+  try { d = L.migrate(JSON.parse(await f.text())); } catch { return toast('Not a valid Daily OS file'); }
+  if (!L.validateData(d)) return toast('File failed validation');
+  const r = L.mergeBlocks(state.blocks, d.blocks);
+  state.blocks.push(...r.added);
+  save(); closeOverlay(); render();
+  const n = r.added.length, ids = new Set(r.added.map((b) => b.id));
+  const msg = (n ? `Merged ${n} block${n === 1 ? '' : 's'}` : 'Nothing new to merge') + (r.clash ? ` · ${r.clash} skipped (overlap)` : '');
+  toast(msg, n ? 'Undo' : '', n ? () => { state.blocks = state.blocks.filter((b) => !ids.has(b.id)); save(); render(); } : null, 6000);
+}
+
+// ---- Phone timer tab ----
 function renderTimerTab() {
-  const cats = document.getElementById('timer-cats');
-  const status = document.getElementById('timer-status');
-  if (!cats) return;
-  const today = L.dayKeyOf(Date.now());
-  cats.replaceChildren(...L.CATS.map((c) => {
-    const on = !!state.timer && state.timer.cat === c.id;
-    const todayMins = mins(today, 'actual', c.id);
-    const el = h('button', {
-      class: 'tcat' + (on ? ' on' : ''),
-      style: `--c:${c.color}`,
-      'aria-pressed': on ? 'true' : 'false',
-      onclick: () => { toggleTimer(c.id); renderTimerTab(); }
-    },
-      h('div', { class: 'tcat-left' },
-        h('div', { class: 'tcat-dot' }),
-        h('div', { class: 'tcat-name' }, c.name)),
+  const today = L.dayKeyOf(Date.now()), t = state.timer;
+  $('#timer-head').replaceChildren(fmtDay(today), h('span', {}, `${fmtH(mins(today, 'actual'))} logged today`));
+  $('#timer-cats').replaceChildren(...L.CATS.map((c) => {
+    const on = !!t && t.cat === c.id, logged = mins(today, 'actual', c.id);
+    return h('button', { class: 'tcat' + (on ? ' on' : ''), style: `--c:${c.color}`, 'data-cat': c.id, 'aria-pressed': on ? 'true' : 'false', onclick: () => toggleTimer(c.id) },
+      h('div', { class: 'tcat-left' }, h('div', { class: 'tcat-dot' }), h('div', { class: 'tcat-name' }, c.name)),
       h('div', { class: 'tcat-right' },
-        h('div', { class: 'tcat-elapsed' }, on ? fmtDur(Date.now() - state.timer.startedAt) : (todayMins ? fmtH(todayMins) : '–')),
-        h('div', { class: 'tcat-today' }, on ? 'running' : (todayMins ? 'today' : ''))));
-    return el;
+        h('div', { class: 'tcat-elapsed' }, on ? fmtDur(Date.now() - t.startedAt) : logged ? fmtH(logged) : '–'),
+        h('div', { class: 'tcat-today' }, on ? 'running' : logged ? 'today' : '')));
   }));
-  if (state.timer) {
-    const c = catOf(state.timer.cat);
-    status.textContent = `${c.name} running — tap to stop`;
-  } else {
-    status.textContent = 'Tap a category to start timing';
-  }
+  $('#timer-status').textContent = t ? `${catOf(t.cat).name} running · tap it to stop` : 'Tap a category to start';
 }
+// Shares this device's data; on the iPad, use Export / Backup → Merge from iPhone.
+$('#sendBtn').addEventListener('click', () => deliver(new File([JSON.stringify(state)], `daily-os-iphone-${L.dayKeyOf(Date.now())}.json`, { type: 'application/json' })));
 
-setInterval(() => {
-  if (state.timer) {
-    const on = document.querySelector('.tcat.on .tcat-elapsed');
-    if (on) on.textContent = fmtDur(Date.now() - state.timer.startedAt);
-  }
-}, 1000);
-
-// ---- Tabs ----
+// ---- Tabs (phone only; iPad always shows the planner) ----
+const app = $('#app');
 function switchTab(name) {
-  const panes = { planner: document.getElementById('pane-planner'), timer: document.getElementById('pane-timer') };
-  const tabs = { planner: document.getElementById('tab-planner'), timer: document.getElementById('tab-timer') };
-  if (!panes.planner || !panes.timer) return;
-  for (const [k, el] of Object.entries(panes)) { el.classList.toggle('active', k === name); }
-  for (const [k, el] of Object.entries(tabs)) { el.classList.toggle('sel', k === name); el.setAttribute('aria-selected', k === name ? 'true' : 'false'); }
-  if (name === 'timer') renderTimerTab();
+  app.dataset.tab = name;
+  for (const n of ['planner', 'timer']) {
+    const b = $('#tab-' + n);
+    b.classList.toggle('sel', n === name);
+    b.setAttribute('aria-selected', n === name ? 'true' : 'false');
+  }
+  try { localStorage.setItem(KEY + '.tab', name); } catch {}
+  if (name === 'planner') requestAnimationFrame(scrollToDefault);
 }
-document.getElementById('tab-planner') && document.getElementById('tab-planner').addEventListener('click', () => switchTab('planner'));
-document.getElementById('tab-timer') && document.getElementById('tab-timer').addEventListener('click', () => switchTab('timer'));
+$('#tab-planner').addEventListener('click', () => switchTab('planner'));
+$('#tab-timer').addEventListener('click', () => switchTab('timer'));
+const wide = matchMedia('(min-width:700px)');
+$('#dayLabel').addEventListener('click', () => { if (!wide.matches) openMonthSheet(); });
 
-// ---- Swipe to change day (on the scroller) ----
+// ---- Swipe left/right on the grid to change day ----
 let swipe = null;
+function slide(dir) {
+  grid.classList.remove('inL', 'inR');
+  void grid.offsetWidth;
+  grid.classList.add(dir > 0 ? 'inL' : 'inR');
+}
+grid.addEventListener('animationend', () => grid.classList.remove('inL', 'inR'));
 scroller.addEventListener('touchstart', (e) => {
-  if (drag || e.touches.length !== 1) return;
-  swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: false };
+  swipe = drag || e.touches.length !== 1 ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: false };
 }, { passive: true });
 scroller.addEventListener('touchmove', (e) => {
-  if (!swipe || drag) return;
+  if (!swipe) return;
+  if (drag || e.touches.length !== 1) { swipe = null; return; }
   const dx = e.touches[0].clientX - swipe.x, dy = e.touches[0].clientY - swipe.y;
   if (!swipe.locked) {
-    if (Math.abs(dy) > 10) { swipe = null; return; } // vertical scroll wins
-    if (Math.abs(dx) > 10) swipe.locked = true;
+    if (Math.abs(dy) > 10 && Math.abs(dy) >= Math.abs(dx)) swipe = null; // vertical scroll wins
+    else if (Math.abs(dx) > 10) swipe.locked = true;
   }
 }, { passive: true });
 scroller.addEventListener('touchend', (e) => {
-  if (!swipe || !swipe.locked) { swipe = null; return; }
-  const dx = e.changedTouches[0].clientX - swipe.x;
+  const s = swipe;
   swipe = null;
-  if (Math.abs(dx) < 60) return;
-  goto(L.addDays(view, dx < 0 ? 1 : -1));
+  if (!s || !s.locked || drag) return;
+  const dx = e.changedTouches[0].clientX - s.x, dy = e.changedTouches[0].clientY - s.y;
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const n = dx < 0 ? 1 : -1;
+  goto(L.addDays(view, n));
+  slide(n);
 }, { passive: true });
 scroller.addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
 
 // ---- Wiring ----
-const goto = (key) => { view = key; closeOverlay(); render(); scrollToDefault(); };
+const goto = (key) => { view = key; monthCur = monthOf(key); closeOverlay(); render(); scrollToDefault(); };
 $('#prev').addEventListener('click', () => goto(L.addDays(view, -1)));
 $('#next').addEventListener('click', () => goto(L.addDays(view, 1)));
 $('#todayBtn').addEventListener('click', () => goto(L.dayKeyOf(Date.now())));
@@ -489,6 +554,10 @@ $('#copyBtn').addEventListener('click', copyPlan);
 $('#menuBtn').addEventListener('click', openMenu);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !drag) { if (!overlay) render(); checkLongTimer(); } });
 
+let tab0 = 'timer';
+try { tab0 = localStorage.getItem(KEY + '.tab') === 'planner' ? 'planner' : 'timer'; } catch {}
+switchTab(tab0);
+recoverStash();
 render();
 requestAnimationFrame(scrollToDefault);
 checkLongTimer();

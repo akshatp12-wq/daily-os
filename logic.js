@@ -104,6 +104,46 @@ export function buildICS(blocks, { layer = 'plan', now = Date.now() } = {}) {
   return L.map(fold).join('\r\n') + '\r\n';
 }
 
+// ---- Month grid: 42 cells (6 weeks), Sunday first ----
+export function monthGrid(y, m) {
+  const off = new Date(y, m - 1, 1).getDay();
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(y, m - 1, 1 - off + i);
+    return { key: keyFromDate(d), day: d.getDate(), inMonth: d.getMonth() === m - 1 };
+  });
+}
+
+// ---- Merge blocks from another device: never overwrites, skips duplicates and overlaps ----
+export function mergeBlocks(existing, incoming) {
+  const ids = new Set(existing.map((b) => b.id)), all = existing.slice(), added = [];
+  let dup = 0, clash = 0;
+  for (const b of incoming) {
+    if (ids.has(b.id)) { dup++; continue; }
+    if (overlaps(all, b)) { clash++; continue; }
+    const nb = { ...b };
+    all.push(nb); added.push(nb); ids.add(nb.id);
+  }
+  return { added, dup, clash };
+}
+
+// ---- Migration: v1 category ids -> current ----
+const LEGACY = { job: ['work', 'Job'], admin: ['life', 'Admin'], personal: ['life', 'Personal'], dev: ['self', 'Development'] };
+export function migrate(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.blocks)) return d;
+  const cat = (c) => (LEGACY[c] ? LEGACY[c][0] : c);
+  const out = {
+    ...d,
+    blocks: d.blocks.map((b) => {
+      if (!b || typeof b !== 'object' || !LEGACY[b.cat]) return b;
+      const [id, old] = LEGACY[b.cat];
+      return { ...b, cat: id, title: b.title === old ? catName(id) : b.title };
+    }),
+  };
+  if (d.timer && typeof d.timer === 'object') out.timer = { ...d.timer, cat: cat(d.timer.cat) };
+  if (d.lastCat !== undefined) out.lastCat = cat(d.lastCat);
+  return out;
+}
+
 // ---- Data validation ----
 const KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 export function validBlock(b) {

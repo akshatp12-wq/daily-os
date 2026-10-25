@@ -1064,7 +1064,8 @@ const checkbox = (label, on = true) => { const i = h('input', { type: 'checkbox'
 function openSyncSetup() {
   const owner = /\.github\.io$/.test(location.hostname) ? location.hostname.split('.')[0] : '';
   const repo = h('input', { type: 'text', value: (syncCfg && syncCfg.repo) || (owner ? `${owner}/daily-os-data` : ''), placeholder: 'owner/daily-os-data', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', autocomplete: 'off' });
-  const token = h('input', { type: 'password', placeholder: 'github_pat_…', autocomplete: 'off' });
+  // A visible text field: a password field invites iOS to autofill a saved password here.
+  const token = h('input', { type: 'text', placeholder: 'github_pat_…', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', class: 'mono' });
   const pw1 = h('input', { type: 'password', placeholder: '12+ characters', autocomplete: 'new-password' });
   const pw2 = h('input', { type: 'password', placeholder: 'Repeat password', autocomplete: 'new-password', 'aria-label': 'Repeat password' });
   const [keepRow, keep] = checkbox('Remember on this device');
@@ -1073,12 +1074,18 @@ function openSyncSetup() {
     const r = repo.value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, '');
     const fail = (m) => { err.textContent = m; go.disabled = false; go.textContent = 'Connect'; };
     if (!/^[\w.-]+\/[\w.-]+$/.test(r)) return fail('Repository should look like owner/name');
-    if (!token.value.trim()) return fail('Paste the access token');
+    const tok = token.value.replace(/\s+/g, '');
+    if (!tok) return fail('Paste the access token');
+    if (!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(tok) && apiBase() === S.GH) return fail('That doesn’t look like a GitHub token. It should start with github_pat_ — copy it again from GitHub.');
     if (pw1.value.length < S.MIN_PASSWORD) return fail(`Use at least ${S.MIN_PASSWORD} characters — this password protects your data`);
     if (pw1.value !== pw2.value) return fail('The passwords don’t match');
     go.disabled = true; go.textContent = 'Checking…'; err.textContent = '';
-    const cfg = { repo: r, token: token.value.trim(), ...(apiBase() !== S.GH ? { api: apiBase() } : {}) };
-    try { await S.client(cfg).list(); } catch (e) { return fail(e.kind === 'offline' ? 'Can’t reach GitHub. Check your connection.' : e.message); }
+    const cfg = { repo: r, token: tok, ...(apiBase() !== S.GH ? { api: apiBase() } : {}) };
+    try { await S.client(cfg).list(); } catch (e) {
+      return fail(e.kind === 'offline' ? 'Can’t reach GitHub. Check your connection.'
+        : e.kind === 'auth' ? `GitHub didn’t accept this token (it starts “${tok.slice(0, 15)}…”, ${tok.length} characters). Make sure you copied all of it, or generate a new one.`
+        : e.message);
+    }
     const sealed = await S.sealKey(cfg, pw1.value);
     store.set(SEALED, sealed); sealedKey = sealed;
     store.del(BASE);

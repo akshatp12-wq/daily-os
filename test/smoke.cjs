@@ -459,9 +459,10 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await P.click('.pop >> text=Set up sync…');
     ok('sync: setup suggests a repo name', (await P.$eval('.pop[aria-label="Set up sync"] input[type=text]', (e) => e.value)) === 'localhost/daily-os-data' || true);
     const fill = async (repo, token, a, b) => {
-      await P.fill('.pop[aria-label="Set up sync"] input[type=text]', repo);
+      await P.fill('.pop[aria-label="Set up sync"] input[type=text]:not(.mono)', repo);
+      await P.fill('.pop[aria-label="Set up sync"] input.mono', token);
       const pw = await P.$$('.pop[aria-label="Set up sync"] input[type=password]');
-      await pw[0].fill(token); await pw[1].fill(a); await pw[2].fill(b);
+      await pw[0].fill(a); await pw[1].fill(b);
       await P.click('.pop[aria-label="Set up sync"] >> text=Connect');
       await P.waitForTimeout(400);
     };
@@ -470,8 +471,8 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     ok('sync setup: rejects a short password', /at least 12/.test(await errText()), await errText());
     await fill('me/daily-os-data', 'tok_good', 'correct horse battery', 'correct horse batteyr');
     ok('sync setup: passwords must match', /don’t match/.test(await errText()));
-    await fill('me/daily-os-data', 'tok_bad', 'correct horse battery', 'correct horse battery');
-    ok('sync setup: a bad token is reported', /rejected/.test(await errText()), await errText());
+    await fill('me/daily-os-data', ' tok_\nbad ', 'correct horse battery', 'correct horse battery');
+    ok('sync setup: a bad token is reported with what was pasted', /didn’t accept this token \(it starts “tok_bad…”, 7 characters\)/.test(await errText()), await errText());
     await fill('me/wrong-repo', 'tok_good', 'correct horse battery', 'correct horse battery');
     ok('sync setup: an unreachable repo is reported', /not found/i.test(await errText()), await errText());
     await fill('https://github.com/me/daily-os-data', 'tok_good', 'correct horse battery', 'correct horse battery');

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "TZ=America/Chicago node --test test/logic.test.js",
+    "test": "TZ=America/Chicago node --test test/logic.test.js test/sync.test.js test/widget.test.cjs",
     "smoke": "node test/smoke.cjs"
   }
 }

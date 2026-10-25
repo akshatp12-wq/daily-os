@@ -197,10 +197,21 @@ body.dragging #scroller{touch-action:none}
 #scrim{position:fixed;inset:0;z-index:20;display:none;background:transparent}
 #scrim.dim{background:rgba(0,0,0,.35)}
 .pop{position:fixed;z-index:21;width:300px;max-width:calc(100vw - 16px);background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:14px;display:flex;flex-direction:column;gap:12px;max-height:calc(100dvh - 16px);overflow:auto}
+.pop>*{flex-shrink:0} /* tall sheets scroll instead of squashing their controls */
 .pop.center{left:50%!important;top:50%!important;transform:translate(-50%,-50%)}
 .pop.sheet{width:400px}
 .pop h3{margin:0;font-size:17px}
-.pop input[type=text]{font:inherit;font-size:17px;width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
+.pop input[type=text],.pop input[type=password]{font:inherit;font-size:17px;width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
+.syncbox{display:flex;flex-direction:column;gap:12px}
+.sdot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
+.sdot.ok{background:var(--good)}.sdot.syncing{background:var(--accent)}.sdot.locked{background:var(--warn)}.sdot.auth,.sdot.repo,.sdot.error{background:var(--bad)}
+.err{color:var(--bad)!important;font-size:13px;margin:0}
+p.err:empty{display:none}
+.fl{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;color:var(--muted)}
+.chk{display:flex;align-items:center;gap:8px;font-size:14px}
+.chk input{width:20px;height:20px;accent-color:var(--accent)}
+.steps{margin:0;padding-left:20px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+textarea.key{font:12px/1.4 ui-monospace,Menlo,monospace;width:100%;min-height:110px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);word-break:break-all;resize:none}
 .ask{font-size:13px;font-weight:600;color:var(--accent);margin:0 0 -6px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{padding:0 10px;font-size:14px}
@@ -239,7 +250,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
         <button id="next" aria-label="Next day">›</button>
       </div>
       <div id="month"></div>
-      <div class="acts"><button id="todayBtn">Today</button><button id="menuBtn">Export / Backup</button></div>
+      <div class="acts"><button id="todayBtn">Today</button><button id="menuBtn">Export / Backup<span id="syncDot" class="sdot" hidden></span></button></div>
       <div class="cap" id="cap"><div class="capbar"><div id="capFill"></div></div><div id="capText"></div></div>
       <div class="acts"><button id="copyBtn">Plan → Actual</button><button id="fireBtn">Fire drill</button></div>
     </header>

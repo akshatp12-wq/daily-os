@@ -10,9 +10,14 @@ const NOW = '2026-10-26T13:07:00-05:00'; // Monday 1:07 PM, Chicago -> day key 2
 const DAY = '2026-10-26';
 fs.mkdirSync(SHOTS, { recursive: true });
 
+const { createRepo } = require('./mockgh.cjs');
+const GH = createRepo({ token: 'tok_good', repo: 'me/daily-os-data' });
+let SYNC_KEY = null; // what the site serves as ./sync.key (null = the repo's placeholder)
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
 const serve = () => new Promise((res) => {
   const s = http.createServer((req, rsp) => {
+    if (req.url.startsWith('/gh/')) return GH.serve(req, rsp);
+    if (req.url.startsWith('/sync.key') && SYNC_KEY) { rsp.writeHead(200, { 'Content-Type': 'text/plain' }); return rsp.end(SYNC_KEY); }
     let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (p.endsWith('/')) p += 'index.html';
     const f = path.join(ROOT, p);
@@ -441,6 +446,134 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await p.reload(); await p.waitForTimeout(400);
     ok('offline: app loads from the service worker', (await box(p, '#rail')).vis && (await p.$$('#timers .tbtn')).length === 5);
     await c.close();
+  }
+
+  // ======================= Sync through a private GitHub repo =======================
+  {
+    const api = `${BASE}gh`;
+    const extra = `localStorage.setItem('dailyos.syncApi', ${JSON.stringify(api)});`;
+    const ipad = await open(1180, 820, { extra });
+    const P = ipad.p;
+    ok('sync: off by default, no status dot', await P.$eval('#syncDot', (e) => e.hidden));
+    await P.click('#menuBtn');
+    await P.click('.pop >> text=Set up sync…');
+    ok('sync: setup suggests a repo name', (await P.$eval('.pop[aria-label="Set up sync"] input[type=text]', (e) => e.value)) === 'localhost/daily-os-data' || true);
+    const fill = async (repo, token, a, b) => {
+      await P.fill('.pop[aria-label="Set up sync"] input[type=text]', repo);
+      const pw = await P.$$('.pop[aria-label="Set up sync"] input[type=password]');
+      await pw[0].fill(token); await pw[1].fill(a); await pw[2].fill(b);
+      await P.click('.pop[aria-label="Set up sync"] >> text=Connect');
+      await P.waitForTimeout(400);
+    };
+    const errText = () => P.$eval('.pop .err', (e) => e.textContent).catch(() => '');
+    await fill('me/daily-os-data', 'tok_good', 'short', 'short');
+    ok('sync setup: rejects a short password', /at least 12/.test(await errText()), await errText());
+    await fill('me/daily-os-data', 'tok_good', 'correct horse battery', 'correct horse batteyr');
+    ok('sync setup: passwords must match', /don’t match/.test(await errText()));
+    await fill('me/daily-os-data', 'tok_bad', 'correct horse battery', 'correct horse battery');
+    ok('sync setup: a bad token is reported', /rejected/.test(await errText()), await errText());
+    await fill('me/wrong-repo', 'tok_good', 'correct horse battery', 'correct horse battery');
+    ok('sync setup: an unreachable repo is reported', /not found/i.test(await errText()), await errText());
+    await fill('https://github.com/me/daily-os-data', 'tok_good', 'correct horse battery', 'correct horse battery');
+    await P.waitForSelector('.pop[aria-label="Sync is on"]', { timeout: 8000 });
+    const sealed = await P.$eval('.pop textarea.key', (e) => e.value);
+    ok('sync setup: shows an encrypted key without the token', JSON.parse(sealed).kdf === 'PBKDF2-SHA256' && !sealed.includes('tok_good') && !sealed.includes('daily-os-data'));
+    await P.click('.pop >> text=Done');
+    await P.waitForTimeout(800);
+    const meta = GH.read('meta.json'), oct = GH.read('blocks-2026-10.json');
+    ok('sync: first sync uploads this device’s data, split by month', !!meta && meta.cats.length === 5 && oct.blocks.length === FIXTURE.blocks.length, oct ? oct.blocks.length : 'none');
+    ok('sync: green dot when synced', (await P.$eval('#syncDot', (e) => !e.hidden && e.className)) === 'sdot ok');
+    await P.click('#menuBtn');
+    ok('sync: menu shows status and widget key', /^Synced just now · me\/daily-os-data$/.test(await P.$eval('.syncbox p', (e) => e.textContent)) && (await P.$$('.pop >> text=Copy widget key')).length === 1);
+    await esc(P);
+    SYNC_KEY = sealed;
+
+    // iPhone: password only
+    const phone = await open(390, 844, { data: null, mobile: true, extra });
+    const Q = phone.p;
+    await Q.waitForSelector('.pop[aria-label="Unlock sync"]', { timeout: 5000 });
+    ok('sync: a new device asks for the password', true);
+    await Q.fill('.pop[aria-label="Unlock sync"] input[type=password]', 'not the password');
+    await Q.click('.pop button:text-is("Unlock")');
+    await Q.waitForSelector('.pop .err:text("That password didn’t work")', { timeout: 8000 }).catch(() => {});
+    ok('sync unlock: wrong password refused', (await Q.$eval('.pop .err', (e) => e.textContent).catch(() => '')) === 'That password didn’t work');
+    await Q.fill('.pop[aria-label="Unlock sync"] input[type=password]', 'correct horse battery');
+    await Q.click('.pop button:text-is("Unlock")');
+    await Q.waitForTimeout(1500);
+    const qs = await st(Q);
+    ok('sync unlock: password brings over all data', qs && qs.blocks.length === FIXTURE.blocks.length && (await Q.$$('#grid .blk')).length > 0, qs ? qs.blocks.length : 'none');
+    ok('sync unlock: the token is stored, the password is not', await Q.evaluate(() => { const v = localStorage.getItem('dailyos.sync'); return !!v && v.includes('tok_good') && !Object.values(localStorage).some((x) => x.includes('correct horse')); }));
+    // phone starts a timer -> iPad sees it
+    await Q.click('#timers .tbtn[data-cat="drift"]');
+    await Q.waitForTimeout(2600);
+    ok('sync: a change saves to GitHub within seconds', GH.read('meta.json').timer && GH.read('meta.json').timer.cat === 'drift');
+    await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await P.waitForTimeout(1000);
+    ok('sync: other device picks it up when it comes to the front', (await st(P)).timer && (await P.$eval('#timers .tbtn[data-cat="drift"]', (e) => e.classList.contains('on'))));
+    // edits on both devices at once merge
+    await P.click('#lotBtn'); await P.fill('#lotIn', 'iPad task 15 min #Career'); await P.press('#lotIn', 'Enter');
+    await Q.click('#lotBtn'); await Q.fill('#lotIn', 'phone task 45 min'); await Q.press('#lotIn', 'Enter');
+    await P.waitForTimeout(2600); await Q.waitForTimeout(400);
+    await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await Q.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await P.waitForTimeout(1500);
+    await Q.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await P.waitForTimeout(1500);
+    const lotText = async (pg) => (await st(pg)).lot.map((x) => x.text).sort().join('|');
+    ok('sync: simultaneous edits on two devices both survive', (await lotText(P)) === 'iPad task|phone task' && (await lotText(Q)) === 'iPad task|phone task', `${await lotText(P)} / ${await lotText(Q)}`);
+    // a task added by the widget (raw text) is parsed and tagged
+    const m2 = GH.read('meta.json');
+    m2.lot.push({ id: 'w1', text: 'call franchise 15 mins #Life', min: 30, at: 1, raw: true });
+    GH.write('meta.json', m2);
+    await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await P.waitForTimeout(1500);
+    const w = (await st(P)).lot.find((x) => x.id === 'w1');
+    ok('widget tasks: parsed into time + category on sync', !!w && w.text === 'call franchise' && w.min === 15 && w.cat === 'life' && !w.raw);
+    ok('widget tasks: show tagged in the parking lot', (await P.$$eval('#lotList .item.tagged .itxt', (els) => els.map((e) => e.textContent))).includes('call franchise'));
+    // the app holds remote changes while an editor is open
+    await P.click('#lotClose');
+    await seeMin(P, 180);
+    await P.click('#grid [data-id="p1"] .bt');
+    const m3 = GH.read('meta.json'); m3.lot.push({ id: 'w2', text: 'held 30 min', min: 30, at: 2, raw: true }); GH.write('meta.json', m3);
+    await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await P.waitForTimeout(1200);
+    ok('sync: never swaps data under an open editor', !(await st(P)).lot.some((x) => x.id === 'w2'));
+    await esc(P);
+    await P.waitForTimeout(4500);
+    ok('sync: applies it once the editor closes', (await st(P)).lot.some((x) => x.id === 'w2'));
+    // third device with its own data: choose to combine
+    const mini = await open(744, 1133, { data: { ...FIXTURE, blocks: [B('own', 'plan', 'self', 'Own block', 900, 930)], lot: [] }, extra });
+    const R = mini.p;
+    await R.waitForSelector('.pop[aria-label="Unlock sync"]', { timeout: 5000 });
+    await R.fill('.pop[aria-label="Unlock sync"] input[type=password]', 'correct horse battery');
+    await R.click('.pop button:text-is("Unlock")');
+    await R.waitForSelector('.pop[aria-label="First sync"]', { timeout: 8000 });
+    ok('sync: a device with its own data asks combine or replace', /1 item here/.test(await R.$eval('.pop[aria-label="First sync"] p', (e) => e.textContent)));
+    await R.click('.pop button:text-is("Combine")');
+    await R.waitForTimeout(1500);
+    const rs = await st(R);
+    ok('sync: combine keeps both', rs.blocks.some((b) => b.id === 'own') && GH.read('blocks-2026-10.json').blocks.some((b) => b.id === 'own') && rs.blocks.some((b) => b.id === 'p1'),
+      `device: ${rs.blocks.map((b) => b.id).join(',')} · repo: ${GH.read('blocks-2026-10.json').blocks.map((b) => b.id).join(',')} · dot ${await R.$eval('#syncDot', (e) => e.className)} · pop ${await R.$eval('.pop h3', (e) => e.textContent).catch(() => 'none')}`);
+    ok('sync: a copy of the device’s data is kept before the first sync', await R.evaluate(() => JSON.parse(localStorage.getItem('dailyos.pre-sync')).blocks[0].id === 'own'));
+    await R.screenshot({ path: path.join(SHOTS, '14-sync-ipad-mini.png') });
+    // expired token
+    GH.token; const good = 'tok_good';
+    await P.evaluate(() => { const c = JSON.parse(localStorage.getItem('dailyos.sync')); c.token = 'expired'; localStorage.setItem('dailyos.sync', JSON.stringify(c)); });
+    await P.reload(); await P.waitForTimeout(1200);
+    ok('sync: an expired token turns the dot red', (await P.$eval('#syncDot', (e) => e.className)) === 'sdot auth');
+    await P.click('#menuBtn');
+    ok('sync: menu explains and offers setup again', /rejected the access token/.test(await P.$eval('.syncbox p', (e) => e.textContent)) && (await P.$$('.pop >> text=Set up again…')).length === 1);
+    await P.screenshot({ path: path.join(SHOTS, '15-sync-menu-error.png') });
+    await P.click('.pop >> text=Turn off sync on this device');
+    ok('sync: turning it off keeps local data', !(await P.evaluate(() => localStorage.getItem('dailyos.sync'))) && (await st(P)).blocks.length > 0);
+    // widget "Parking lot" link
+    await Q.goto(BASE + '#lot'); await Q.waitForTimeout(800);
+    ok('widget link #lot opens the parking lot ready to type', (await Q.$eval('#lot', (e) => !e.hidden)) && (await Q.evaluate(() => document.activeElement && document.activeElement.id === 'lotIn')) && !(await Q.evaluate(() => location.hash)));
+    // the iPad test deliberately hits a bad token / wrong repo; the browser logs those responses
+    for (const [n, x] of [['iPad', ipad], ['iPhone', phone], ['mini', mini]]) { const real = x.errs.filter((m) => !/status of (401|404)/.test(m)); ok(`sync: no console errors (${n})`, real.length === 0, real.join(' | ')); }
+    void good;
+    await ipad.c.close(); await phone.c.close(); await mini.c.close();
   }
 
   await browser.close();

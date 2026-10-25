@@ -1,5 +1,6 @@
 import * as L from './logic.js';
 import { weekBars, spark } from './charts.js';
+import * as S from './sync.js';
 
 const SLOT_PX = 28, KEY = 'dailyos', HOLD = 250;
 const $ = (s) => document.querySelector(s);
@@ -44,10 +45,11 @@ function load() {
   setTimeout(() => toast('Couldn’t read saved data — a copy was kept', '', null, 5000), 600);
   return fresh();
 }
-function save() {
+function persist() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); saveWarned = false; }
   catch { if (!saveWarned) { saveWarned = true; toast('Could not save: storage unavailable'); } }
 }
+function save() { persist(); if (syncer) syncer.touch(); }
 // v2 set aside data that used the old category names; bring it back once.
 function recoverStash() {
   try {
@@ -227,7 +229,7 @@ function openMonthSheet() {
   const el = h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Pick a day' });
   const draw = () => el.replaceChildren(monthEl(cur, (n) => { cur = shiftMonth(cur, n); draw(); }, (k) => goto(k)), h('button', { onclick: closeOverlay }, 'Close'));
   draw();
-  showOverlay(el, 'sheet', null, true);
+  showOverlay(el, 'month', null, true);
 }
 
 // ---- Overlays (popovers / sheets) ----
@@ -248,6 +250,7 @@ function closeOverlay() {
   overlay = null;
   o.el.remove();
   scrim.style.display = 'none';
+  if (o.onClose) o.onClose();
   if (o.kind === 'pop') renderGrid();
 }
 scrim.addEventListener('pointerdown', (e) => { e.preventDefault(); closeOverlay(); });
@@ -931,7 +934,11 @@ function openMenu() {
     (fileMode === 'merge' ? mergeFile : restore)(f);
   });
   const pick = (m) => () => { fileMode = m; fileIn.click(); };
+  const syncBox = h('div', { class: 'syncbox' });
+  const drawSync = () => syncBox.replaceChildren(...syncSection());
+  drawSync();
   const el = h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Export and backup' },
+    syncBox,
     h('h3', {}, 'Export to Calendar'),
     seg([['day', 'Day'], ['week', 'Week']], () => scope, (v) => { scope = v; }),
     seg([['plan', 'Plan'], ['actual', 'Actual']], () => layer, (v) => { layer = v; }),
@@ -942,11 +949,14 @@ function openMenu() {
     h('h3', {}, 'Backup'),
     h('div', { class: 'row' }, h('button', { onclick: () => deliver(backup) }, 'Back up (JSON)'), h('button', { onclick: pick('restore') }, 'Restore…')),
     h('button', { onclick: pick('merge') }, 'Merge from iPhone…'),
-    h('p', { class: 'muted' }, 'Restore replaces everything on this device. Merge only adds blocks from the iPhone’s file and never overwrites what’s here.'),
+    h('p', { class: 'muted' }, syncCfg
+      ? 'With sync on, Restore replaces your data on every device. Merge only adds blocks and never overwrites.'
+      : 'Restore replaces everything on this device. Merge only adds blocks from the iPhone’s file and never overwrites what’s here.'),
     fileIn,
     h('button', { onclick: closeOverlay }, 'Close'));
   build();
-  showOverlay(el, 'sheet', null, true);
+  showOverlay(el, 'menu', null, true);
+  overlay.refresh = () => { drawSync(); build(); };
 }
 async function readFile(f) {
   let d;
@@ -977,6 +987,183 @@ async function mergeFile(f) {
   toast(msg, n ? 'Undo' : '', n ? () => { state.blocks = state.blocks.filter((b) => !added.has(b.id)); state.cats = catsBefore; save(); render(); } : null, 6000);
 }
 
+// ---- Sync (private GitHub repo, unlocked with a password) ----
+const SYNC = KEY + '.sync', BASE = KEY + '.sync.base', SEALED = KEY + '.sync.sealed', SKIP = KEY + '.sync.skip';
+const store = {
+  get: (k) => { try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); } catch { return null; } },
+  set: (k, v, keep = true) => { try { (keep ? localStorage : sessionStorage).setItem(k, v); } catch {} },
+  del: (k) => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch {} },
+};
+let syncCfg = null, syncer = null, sealedKey = null, sync = { s: 'off', msg: '' };
+try { syncCfg = JSON.parse(store.get(SYNC)); } catch {}
+const ua = navigator.userAgent, device = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad' : 'browser';
+const apiBase = () => store.get(KEY + '.syncApi') || S.GH; // test hook
+const ago = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)}h ago`; };
+const SYNC_TITLE = { ok: 'Synced', syncing: 'Syncing…', offline: 'Offline — will sync when back online', locked: 'Sync locked — open to unlock', auth: 'Sync problem', repo: 'Sync problem', error: 'Sync problem' };
+function setSync(s, msg = '') { sync = { s, msg }; renderSyncDot(); if (overlay && overlay.refresh) overlay.refresh(); }
+function renderSyncDot() {
+  const s = syncCfg ? sync.s : sealedKey ? 'locked' : 'off', dot = $('#syncDot');
+  dot.hidden = s === 'off';
+  dot.className = 'sdot ' + s;
+  dot.title = SYNC_TITLE[s] || '';
+  $('#menuBtn').setAttribute('aria-label', `Export / Backup${s === 'off' ? '' : ` (${SYNC_TITLE[s] || s})`}`);
+}
+function startSync(cfg, keep = true) {
+  if (syncer) syncer.stop();
+  syncCfg = cfg;
+  store.set(SYNC, JSON.stringify(cfg), keep);
+  syncer = S.engine(cfg, {
+    getState: () => state,
+    applyState: (next) => { state = { ...fresh(), ...next }; persist(); render(); },
+    // Don't swap data under an open editor or a drag; sheets that don't edit data are safe.
+    isBusy: () => dragging() || !!(overlay && !['menu', 'month', 'sealed', 'copy', 'setup', 'unlock'].includes(overlay.kind)),
+    onStatus: setSync,
+    loadBase: () => { try { const b = JSON.parse(localStorage.getItem(BASE)); return b && b.repo === cfg.repo ? b : null; } catch { return null; } },
+    saveBase: (b) => { try { localStorage.setItem(BASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
+    askFirst: askFirstSync,
+  }, device);
+  setSync('syncing');
+  syncer.run();
+}
+function syncOff() {
+  if (syncer) syncer.stop();
+  syncer = null; syncCfg = null;
+  store.del(SYNC); store.del(BASE);
+  setSync('off');
+  toast('Sync is off on this device. Your data stays here.');
+}
+function syncLine() {
+  if (sync.s === 'syncing') return 'Syncing…';
+  if (sync.s === 'ok') return `Synced ${ago(syncer.lastOk)} · ${syncCfg.repo}`;
+  if (sync.s === 'offline') return 'Offline. Changes are saved here and sync when you’re back online.';
+  if (sync.s === 'auth') return 'GitHub rejected the access token (it may have expired). Set up sync again with a new token.';
+  return sync.msg || 'Waiting to sync';
+}
+function syncSection() {
+  if (syncCfg) {
+    const bad = ['auth', 'repo', 'error'].includes(sync.s);
+    return [h('h3', {}, 'Sync'), h('p', { class: 'muted' + (bad ? ' err' : '') }, syncLine()),
+      h('div', { class: 'row' }, h('button', { onclick: () => syncer && syncer.run() }, 'Sync now'), h('button', { onclick: () => copyText(S.widgetKey(syncCfg), 'Widget key copied. Paste it into Scriptable when asked — treat it like a password.') }, 'Copy widget key')),
+      store.get(SEALED) ? h('button', { onclick: () => copyText(store.get(SEALED), 'Sync key copied') }, 'Copy sync key') : null,
+      bad ? h('button', { class: 'primary', onclick: openSyncSetup }, 'Set up again…') : null,
+      h('button', { class: 'danger', onclick: syncOff }, 'Turn off sync on this device'), h('hr')];
+  }
+  if (sealedKey) return [h('h3', {}, 'Sync'), h('p', { class: 'muted' }, 'Sync is set up. Enter your password to turn it on for this device.'), h('button', { class: 'primary', onclick: openUnlock }, 'Unlock sync…'), h('hr')];
+  return [h('h3', {}, 'Sync across devices'), h('p', { class: 'muted' }, 'Keep your iPad, iPhone and widget in step through a private GitHub repository, unlocked with a password.'), h('button', { onclick: openSyncSetup }, 'Set up sync…'), h('hr')];
+}
+function copyText(text, msg) {
+  const fallback = () => {
+    const ta = h('textarea', { class: 'key', readonly: true, 'aria-label': 'Key' }, text);
+    showOverlay(h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Copy' }, h('h3', {}, 'Copy this'), ta, h('button', { class: 'primary', onclick: closeOverlay }, 'Done')), 'copy', null, true);
+    ta.select();
+  };
+  try { navigator.clipboard.writeText(text).then(() => toast(msg, '', null, 4000), fallback); } catch { fallback(); }
+}
+const field = (label, input) => h('label', { class: 'fl' }, label, input);
+const checkbox = (label, on = true) => { const i = h('input', { type: 'checkbox', checked: on }); return [h('label', { class: 'chk' }, i, label), i]; };
+function openSyncSetup() {
+  const owner = /\.github\.io$/.test(location.hostname) ? location.hostname.split('.')[0] : '';
+  const repo = h('input', { type: 'text', value: (syncCfg && syncCfg.repo) || (owner ? `${owner}/daily-os-data` : ''), placeholder: 'owner/daily-os-data', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', autocomplete: 'off' });
+  const token = h('input', { type: 'password', placeholder: 'github_pat_…', autocomplete: 'off' });
+  const pw1 = h('input', { type: 'password', placeholder: '12+ characters', autocomplete: 'new-password' });
+  const pw2 = h('input', { type: 'password', placeholder: 'Repeat password', autocomplete: 'new-password', 'aria-label': 'Repeat password' });
+  const [keepRow, keep] = checkbox('Remember on this device');
+  const err = h('p', { class: 'err' });
+  const go = h('button', { class: 'primary', onclick: async () => {
+    const r = repo.value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, '');
+    const fail = (m) => { err.textContent = m; go.disabled = false; go.textContent = 'Connect'; };
+    if (!/^[\w.-]+\/[\w.-]+$/.test(r)) return fail('Repository should look like owner/name');
+    if (!token.value.trim()) return fail('Paste the access token');
+    if (pw1.value.length < S.MIN_PASSWORD) return fail(`Use at least ${S.MIN_PASSWORD} characters — this password protects your data`);
+    if (pw1.value !== pw2.value) return fail('The passwords don’t match');
+    go.disabled = true; go.textContent = 'Checking…'; err.textContent = '';
+    const cfg = { repo: r, token: token.value.trim(), ...(apiBase() !== S.GH ? { api: apiBase() } : {}) };
+    try { await S.client(cfg).list(); } catch (e) { return fail(e.kind === 'offline' ? 'Can’t reach GitHub. Check your connection.' : e.message); }
+    const sealed = await S.sealKey(cfg, pw1.value);
+    store.set(SEALED, sealed); sealedKey = sealed;
+    store.del(BASE);
+    closeOverlay();
+    startSync(cfg, keep.checked);
+    showSealed(sealed);
+  } }, 'Connect');
+  const el = h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Set up sync' },
+    h('h3', {}, 'Set up sync'),
+    h('ol', { class: 'steps' },
+      h('li', {}, 'On GitHub, create a ', h('b', {}, 'private'), ' repository for your data, e.g. daily-os-data.'),
+      h('li', {}, 'Create a fine-grained access token for only that repository, with Contents: Read and write.'),
+      h('li', {}, 'Pick a password. You’ll type it once on each device.')),
+    field('Repository', repo), field('Access token', token), field('Sync password', pw1), pw2, keepRow, err,
+    h('div', { class: 'row' }, h('button', { onclick: closeOverlay }, 'Cancel'), go));
+  showOverlay(el, 'setup', null, true);
+}
+function showSealed(sealed) {
+  const ta = h('textarea', { class: 'key', readonly: true, 'aria-label': 'Sync key' }, sealed);
+  showOverlay(h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Sync is on' },
+    h('h3', {}, 'Sync is on'),
+    h('p', { class: 'muted' }, 'So your other devices only need the password, publish this key as sync.key in the app’s repository. It’s encrypted: it opens only with your password.'),
+    ta,
+    h('div', { class: 'row' }, h('button', { onclick: () => copyText(sealed, 'Sync key copied') }, 'Copy key'), h('button', { class: 'primary', onclick: closeOverlay }, 'Done'))), 'sealed', null, true);
+}
+function openUnlock() {
+  const pw = h('input', { type: 'password', placeholder: 'Sync password', autocomplete: 'current-password', 'aria-label': 'Sync password' });
+  const [keepRow, keep] = checkbox('Remember on this device');
+  const err = h('p', { class: 'err' });
+  const go = async () => {
+    btn.disabled = true; btn.textContent = 'Unlocking…'; err.textContent = '';
+    try {
+      const cfg = await S.openKey(sealedKey, pw.value);
+      store.del(SKIP);
+      closeOverlay();
+      startSync(cfg, keep.checked);
+      toast('Sync is on');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Unlock';
+      err.textContent = e.message === 'wrong-password' ? 'That password didn’t work' : 'This sync key can’t be read';
+    }
+  };
+  const btn = h('button', { class: 'primary', onclick: go }, 'Unlock');
+  pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  showOverlay(h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Unlock sync' },
+    h('h3', {}, 'Unlock sync'),
+    h('p', { class: 'muted' }, 'Your data syncs through your private GitHub repository. Enter the password you chose when you set it up.'),
+    pw, keepRow, err,
+    h('div', { class: 'row' }, h('button', { onclick: () => { store.set(SKIP, '1'); closeOverlay(); } }, 'Not now'), btn)), 'unlock', null, true);
+  setTimeout(() => pw.focus(), 50);
+}
+// First sync on a device that already has its own data.
+function askFirstSync(n) {
+  return new Promise((resolve) => {
+    try { localStorage.setItem(KEY + '.pre-sync', JSON.stringify(state)); } catch {}
+    const done = (v) => { resolve(v); closeOverlay(); };
+    showOverlay(h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'First sync' },
+      h('h3', {}, 'This device already has data'),
+      h('p', { class: 'muted' }, `${n} item${n === 1 ? '' : 's'} here aren’t in your synced data yet. Combine them, or replace this device with the synced copy? A copy of this device’s data is kept either way.`),
+      h('div', { class: 'row' }, h('button', { onclick: () => done('remote') }, 'Use synced copy'), h('button', { class: 'primary', onclick: () => done('merge') }, 'Combine'))), 'ask', null, true);
+    overlay.onClose = () => resolve('merge');
+  });
+}
+async function initSync() {
+  if (syncCfg) { let keep = false; try { keep = !!localStorage.getItem(SYNC); } catch {} startSync(syncCfg, keep); }
+  try {
+    const res = await fetch('./sync.key', { cache: 'no-store' });
+    if (res.ok) { const t = (await res.text()).trim(); if (JSON.parse(t).ct) sealedKey = t; }
+  } catch {}
+  if (!sealedKey) sealedKey = store.get(SEALED);
+  renderSyncDot();
+  if (!syncCfg && sealedKey && !store.get(SKIP) && !overlay) openUnlock();
+}
+setInterval(() => { if (syncer && !document.hidden) syncer.run(); }, 20000);
+addEventListener('online', () => { if (syncer) syncer.run(); });
+// The widget's "Parking lot" button opens …/#lot
+function openFromHash() {
+  if (location.hash !== '#lot') return;
+  history.replaceState(null, '', location.pathname + location.search);
+  setMode('plan');
+  setLot(true);
+  lotIn.focus();
+}
+addEventListener('hashchange', openFromHash);
+
 // ---- Wiring ----
 const goto = (key) => { view = key; monthCur = monthOf(key); closeOverlay(); render(); if (mode === 'plan') scrollToDefault(); };
 function setMode(m) {
@@ -1002,11 +1189,17 @@ addEventListener('resize', () => {
   if (overlay && overlay.sel) position(overlay.el, overlay.sel);
   if (mode === 'dash') renderDash();
 });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !dragging()) { if (!overlay) render(); checkLongTimer(); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (!dragging()) { if (!overlay) render(); checkLongTimer(); }
+  if (syncer) syncer.run();
+});
 
 try { localStorage.removeItem(KEY + '.tab'); } catch {} // v3 phone-tab setting, no longer used
 recoverStash();
 render();
 requestAnimationFrame(scrollToDefault);
 checkLongTimer();
+openFromHash();
+initSync();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});

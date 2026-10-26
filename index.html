@@ -19,6 +19,7 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+html{overflow:hidden;touch-action:manipulation} /* no double-tap zoom; the page itself never scrolls */
 body{overflow:hidden;overscroll-behavior:none}
 button{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:44px;min-width:44px;padding:0 14px;touch-action:manipulation;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;-webkit-user-select:none;user-select:none}
 button:active{opacity:.7}
@@ -203,7 +204,7 @@ body.dragging #scroller{touch-action:none}
 .pop h3{margin:0;font-size:17px}
 .pop input[type=text],.pop input[type=password]{font:inherit;font-size:17px;width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
 .syncbox{display:flex;flex-direction:column;gap:12px}
-.pop input.mono{font:14px ui-monospace,Menlo,monospace}
+.pop input.mono{font:16px ui-monospace,Menlo,monospace} /* 16px+ so iOS doesn't zoom on focus */
 .sdot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
 .sdot.ok{background:var(--good)}.sdot.syncing{background:var(--accent)}.sdot.locked{background:var(--warn)}.sdot.auth,.sdot.repo,.sdot.error{background:var(--bad)}
 .err{color:var(--bad)!important;font-size:13px;margin:0}

@@ -1202,6 +1202,20 @@ document.addEventListener('visibilitychange', () => {
   if (syncer) syncer.run();
 });
 
+// iOS: after the keyboard closes, a Home Screen app can stay shifted up under the status bar
+// (top bar blurred / cut off). The page never scrolls by design, so snap it back.
+const typing = () => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== 'checkbox'; };
+const unshift = () => {
+  if (typing()) return;
+  if (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop) {
+    window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
+  }
+};
+document.addEventListener('focusout', () => setTimeout(unshift, 120));
+addEventListener('scroll', () => setTimeout(unshift, 120), { passive: true });
+addEventListener('orientationchange', () => setTimeout(unshift, 300));
+if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(unshift, 120));
+
 try { localStorage.removeItem(KEY + '.tab'); } catch {} // v3 phone-tab setting, no longer used
 recoverStash();
 render();

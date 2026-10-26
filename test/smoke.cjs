@@ -12,12 +12,12 @@ fs.mkdirSync(SHOTS, { recursive: true });
 
 const { createRepo } = require('./mockgh.cjs');
 const GH = createRepo({ token: 'tok_good', repo: 'me/daily-os-data' });
-let SYNC_KEY = null; // what the site serves as ./sync.key (null = the repo's placeholder)
+let SYNC_KEY = null; // what the test site serves as ./sync.key (null = empty placeholder)
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
 const serve = () => new Promise((res) => {
   const s = http.createServer((req, rsp) => {
     if (req.url.startsWith('/gh/')) return GH.serve(req, rsp);
-    if (req.url.startsWith('/sync.key') && SYNC_KEY) { rsp.writeHead(200, { 'Content-Type': 'text/plain' }); return rsp.end(SYNC_KEY); }
+    if (req.url.startsWith('/sync.key')) { rsp.writeHead(200, { 'Content-Type': 'text/plain' }); return rsp.end(SYNC_KEY || '{}'); } // never the real published key
     let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (p.endsWith('/')) p += 'index.html';
     const f = path.join(ROOT, p);

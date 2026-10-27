@@ -192,6 +192,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     ok('lot: sorted into Quick / Medium / Long, shortest first', JSON.stringify(secs) === JSON.stringify([['Quick · 30m or less', ['call franchise', 'email lender']], ['Medium · 45–75m', ['update resume']], ['Long · 90m+', ['LBO practice']]]), JSON.stringify(secs));
     const tagged = await p.$eval('#lotList .item.tagged', (e) => [e.querySelector('.itxt').textContent, e.querySelector('.itag').textContent, e.style.getPropertyValue('--c')]);
     ok('lot: #Career links and colors the task', JSON.stringify(tagged) === JSON.stringify(['update resume', 'Career', '#059669']), JSON.stringify(tagged));
+    ok('lot: no stray text from empty sections', !/null|undefined/.test(await p.$eval('#lotList', (e) => e.textContent)));
     ok('lot: untimed task shows ~30m', (await p.$$eval('#lotList .idur', (els) => els.map((e) => e.textContent))).includes('~30m'));
     ok('lot: count on the bar button', (await p.$eval('#lotCount', (e) => e.textContent)) === '4');
     await p.screenshot({ path: path.join(SHOTS, '03-parking-lot.png') });
@@ -485,6 +486,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     ok('sync: first sync uploads this device’s data, split by month', !!meta && meta.cats.length === 5 && oct.blocks.length === FIXTURE.blocks.length, oct ? oct.blocks.length : 'none');
     ok('sync: green dot when synced', (await P.$eval('#syncDot', (e) => !e.hidden && e.className)) === 'sdot ok');
     await P.click('#menuBtn');
+    ok('sync: menu has no stray text', !/null|undefined/.test(await P.$eval('.syncbox', (e) => e.textContent)));
     ok('sync: menu shows status and widget key', /^Synced just now · me\/daily-os-data$/.test(await P.$eval('.syncbox p', (e) => e.textContent)) && (await P.$$('.pop >> text=Copy widget key')).length === 1);
     await esc(P);
     SYNC_KEY = sealed;

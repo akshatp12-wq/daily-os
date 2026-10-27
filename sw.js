@@ -1,4 +1,4 @@
-const CACHE = 'dailyos-v8';
+const CACHE = 'dailyos-v9';
 const ASSETS = ['./', './index.html', './app.js', './logic.js', './charts.js', './sync.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

@@ -661,7 +661,7 @@ function renderLot() {
     return h('div', { class: 'lsec' }, h('h4', {}, h('span', {}, title), h('span', {}, `${list.length} · ${fmtH(list.reduce((s, x) => s + x.min, 0))}`)), list.map(itemEl));
   };
   lotList.replaceChildren(...(state.lot.length
-    ? [sec('quick', 'Quick · 30m or less'), sec('medium', 'Medium · 45–75m'), sec('long', 'Long · 90m+')]
+    ? [sec('quick', 'Quick · 30m or less'), sec('medium', 'Medium · 45–75m'), sec('long', 'Long · 90m+')].filter(Boolean) // empty sections are skipped
     : [h('div', { class: 'lempty' }, 'Type a task and press Enter. Add a time like “20 min” and a category like #Career. Long-press a task and drag it onto the Plan to schedule it.')]));
 }
 function itemEl(x) {
@@ -935,7 +935,7 @@ function openMenu() {
   });
   const pick = (m) => () => { fileMode = m; fileIn.click(); };
   const syncBox = h('div', { class: 'syncbox' });
-  const drawSync = () => syncBox.replaceChildren(...syncSection());
+  const drawSync = () => syncBox.replaceChildren(...syncSection().filter(Boolean));
   drawSync();
   const el = h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Export and backup' },
     syncBox,

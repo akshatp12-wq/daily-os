@@ -11,8 +11,8 @@ const pad = (n) => String(n).padStart(2, '0');
 const dayKeyOf = (ms) => { const d = new Date(ms); const x = d.getHours() < 6 ? new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1) : d; return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
 const offset = (key, ms) => { const [y, m, d] = key.split('-').map(Number); return Math.round((ms - new Date(y, m - 1, d, 6).getTime()) / 60000); };
 
-function harness({ repo, query = {}, widget = false, family = 'medium', alerts = [], key = null, pasteboard = '' }) {
-  const out = { widget: null, presented: null, alerts: [], keychain: new Map(key ? [['dailyos.widget', key]] : []), files: new Map() };
+function harness({ repo, query = {}, widget = false, family = 'medium', alerts = [], key = null, pasteboard = '', siri = false, pending = null }) {
+  const out = { widget: null, presented: null, alerts: [], keychain: new Map(key ? [['dailyos.widget', key]] : []), files: new Map(), pending: pending || new Map(), output: null };
   class Node { constructor(kind) { this.kind = kind; this.kids = []; } addText(s) { const t = new Node('text'); t.text = s; this.kids.push(t); return t; }
     addDate(d) { const t = new Node('date'); t.date = d; t.applyTimerStyle = () => { t.timer = true; }; t.rightAlignText = () => {}; this.kids.push(t); return t; }
     addStack() { const s = new Node('stack'); this.kids.push(s); return s; } addSpacer() { this.kids.push(new Node('spacer')); }
@@ -38,12 +38,18 @@ function harness({ repo, query = {}, widget = false, family = 'medium', alerts =
   const Data = { fromString: (s) => ({ toBase64String: () => Buffer.from(s, 'utf8').toString('base64') }), fromBase64String: (s) => ({ toRawString: () => Buffer.from(s, 'base64').toString('utf8') }) };
   const Keychain = { contains: (k) => out.keychain.has(k), get: (k) => out.keychain.get(k), set: (k, v) => out.keychain.set(k, v), remove: (k) => out.keychain.delete(k) };
   const FileManager = { local: () => ({ documentsDirectory: () => '/docs', joinPath: (a, b) => `${a}/${b}`, fileExists: (p) => out.files.has(p), readString: (p) => out.files.get(p), writeString: (p, s) => out.files.set(p, s) }) };
+  class Notification {
+    setTriggerDate(d) { this.trigger = d; }
+    async schedule() { out.pending.set(this.identifier, this); }
+    static async allPending() { return [...out.pending.values()]; }
+    static async removePending(ids) { for (const id of ids) out.pending.delete(id); }
+  }
   const env = {
-    ListWidget, Color, Font, Size, Request, Alert, Data, Keychain, FileManager,
+    ListWidget, Notification, Color, Font, Size, Request, Alert, Data, Keychain, FileManager,
     Pasteboard: { paste: () => pasteboard },
     URLScheme: { forRunningScript: () => 'scriptable:///run/Daily%20OS' },
-    Script: { setWidget: (w) => { out.widget = w; }, complete: () => {} },
-    config: { runsInWidget: widget, runsInAccessoryWidget: widget && family.startsWith('accessory'), widgetFamily: family },
+    Script: { setWidget: (w) => { out.widget = w; }, complete: () => {}, setShortcutOutput: (v) => { out.output = v; } },
+    config: { runsInWidget: widget, runsInAccessoryWidget: widget && family.startsWith('accessory'), widgetFamily: family, runsWithSiri: siri },
     args: { queryParameters: query },
   };
   return { out, run: () => new AsyncFunction(...Object.keys(env), SRC)(...Object.values(env)) };
@@ -138,4 +144,45 @@ test('offline or bad key: shows last known data or a clear message', async () =>
   const h3 = harness({ repo, widget: true, key: JSON.stringify({ repo: 'me/data', token: 'wrong', api: 'http://mock/gh' }) });
   await h3.run();
   assert.ok(texts(h3.out.widget).some((s) => /rejected/.test(s)));
+});
+
+test('notifications: block start, 5 min left, timer check-ins, evening nudge', async () => {
+  const repo = seededRepo();
+  const key = JSON.stringify({ repo: 'me/data', token: 'tok', api: 'http://mock/gh' });
+  const pending = new Map([['dailyos:old', { identifier: 'dailyos:old' }], ['other-script', { identifier: 'other-script' }]]);
+  const h = harness({ repo, widget: true, key, pending });
+  await h.run();
+  const ids = [...h.out.pending.keys()];
+  assert.ok(!ids.includes('dailyos:old'), 'stale ones replaced');
+  assert.ok(ids.includes('other-script'), 'other scripts’ notifications untouched');
+  const start = [...h.out.pending.values()].find((n) => n.identifier.startsWith('dailyos:start:n:'));
+  assert.ok(start && start.title === 'Coffee chat' && /^Starting now · until /.test(start.body), 'block start');
+  const left = [...h.out.pending.values()].find((n) => n.identifier.startsWith('dailyos:left:n:'));
+  assert.ok(left && left.title === '5 min left: Coffee chat');
+  assert.equal(left.trigger.getTime() - start.trigger.getTime(), 25 * 60000);
+  assert.ok(!ids.some((i) => i.startsWith('dailyos:start:p:')), 'nothing for the past');
+  assert.ok(!ids.some((i) => i.includes(':a:')), 'nothing for Actual blocks');
+  const timers = [...h.out.pending.values()].filter((n) => n.identifier.startsWith('dailyos:timer:'));
+  assert.deepEqual(timers.map((n) => n.title).sort(), ['Work · 1h 30m so far', 'Work · 2h 30m so far', 'Work · 45 min so far']);
+  assert.ok(ids.some((i) => i.startsWith('dailyos:evening:')));
+  for (const n of h.out.pending.values()) if (n.identifier.startsWith('dailyos:')) { assert.equal(n.threadIdentifier, 'dailyos'); assert.ok(n.trigger.getTime() > Date.now()); }
+  // a second refresh doesn't duplicate
+  const n1 = h.out.pending.size;
+  const h2 = harness({ repo, widget: true, key, pending: h.out.pending });
+  await h2.run();
+  assert.equal(h2.out.pending.size, n1);
+  // timer stopped elsewhere -> its check-ins go away on the next refresh
+  const m = repo.read('meta.json'); m.timer = null; repo.write('meta.json', m);
+  const h3 = harness({ repo, widget: true, key, pending: h.out.pending });
+  await h3.run();
+  assert.ok(![...h3.out.pending.keys()].some((i) => i.startsWith('dailyos:timer:')));
+});
+
+test('notifications: Shortcuts automation just refreshes them', async () => {
+  const repo = seededRepo();
+  const h = harness({ repo, siri: true, key: JSON.stringify({ repo: 'me/data', token: 'tok', api: 'http://mock/gh' }) });
+  await h.run();
+  assert.match(h.out.output, /^Daily OS: \d+ notifications lined up$/);
+  assert.equal(h.out.presented, null);
+  assert.ok(h.out.pending.size > 0);
 });

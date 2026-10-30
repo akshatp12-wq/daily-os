@@ -5,6 +5,18 @@
 // script named "Daily OS", paste this file, run it once and paste the key when asked.
 // Then add a Scriptable widget (medium works best) and choose the "Daily OS" script.
 // Lock Screen widgets work too. Run with ?action=reset to remove the saved key.
+//
+// Notifications: every time the widget refreshes (or the script runs), it lines up iOS
+// notifications from your synced plan. Allow notifications for Scriptable when asked.
+// Turn any of them off below. If they ever seem stale, add a Shortcuts automation
+// (e.g. every morning) that runs this script — it then just refreshes notifications.
+
+const NOTIFY = {
+  blockStart: true,             // "Deck turn — starting now"
+  fiveLeft: true,               // "5 min left: Deck turn" (blocks of 30 min or more)
+  timerCheckins: [45, 90, 150], // minutes into a running timer; [] to turn off
+  evening: '21:00',             // gentle journal nudge; '' to turn off
+};
 
 const APP = 'https://akshatp12-wq.github.io/daily-os/';
 const KC = 'dailyos.widget';
@@ -39,6 +51,46 @@ function status(meta, blocks, nowMs) {
     next: plans.find((p) => p.at > nowMs) || null,
     lot: ((meta && meta.lot) || []).length,
   };
+}
+
+// ---- Notifications (pure: what to schedule in the next 24h) ----
+function plan(meta, blocks, nowMs, cfg = NOTIFY) {
+  const cats = (meta && meta.cats) || [];
+  const name = (id) => (cats.find((c) => c.id === id) || { name: 'Timer' }).name;
+  const horizon = nowMs + 24 * 3600e3, out = [];
+  const add = (id, at, title, body) => { if (at > nowMs && at <= horizon) out.push({ id: `dailyos:${id}`, at, title, body }); };
+  const today = dayKeyOf(nowMs);
+  for (const b of blocks) {
+    if (b.layer !== 'plan' || (b.day !== today && b.day !== addDays(today, 1))) continue;
+    const s = minToMs(b.day, b.start), e = minToMs(b.day, b.end), title = b.title || name(b.cat);
+    if (cfg.blockStart) add(`start:${b.id}:${b.start}`, s, title, `Starting now · until ${fmtTime(e)}`);
+    if (cfg.fiveLeft && b.end - b.start >= 30) add(`left:${b.id}:${b.end}`, e - 5 * 60000, `5 min left: ${title}`, `Wraps up at ${fmtTime(e)}`);
+  }
+  const t = meta && meta.timer;
+  if (t) for (const m of cfg.timerCheckins || []) {
+    add(`timer:${t.startedAt}:${m}`, t.startedAt + m * 60000, `${name(t.cat)} · ${m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m} min`} so far`, 'Still on it? Tap to switch or stop.');
+  }
+  if (cfg.evening) {
+    const [hh, mm] = cfg.evening.split(':').map(Number), d = new Date(nowMs);
+    let at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm).getTime();
+    if (at <= nowMs) at = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, hh, mm).getTime();
+    add(`evening:${dateKey(new Date(at))}`, at, 'A line for To Myself?', 'One line is a whole day.');
+  }
+  return out.sort((a, b) => a.at - b.at).slice(0, 40);
+}
+// Replace what we scheduled last time with what the plan says now.
+async function notify(data, nowMs = Date.now()) {
+  if (typeof Notification === 'undefined' || !data) return 0;
+  const ours = (await Notification.allPending()).filter((n) => (n.identifier || '').startsWith('dailyos:')).map((n) => n.identifier);
+  if (ours.length) await Notification.removePending(ours);
+  const list = plan(data.meta, data.blocks, nowMs);
+  for (const x of list) {
+    const n = new Notification();
+    n.identifier = x.id; n.threadIdentifier = 'dailyos'; n.title = x.title; n.body = x.body; n.openURL = APP; n.sound = 'default';
+    n.setTriggerDate(new Date(x.at));
+    await n.schedule();
+  }
+  return list.length;
 }
 
 // ---- GitHub ----
@@ -160,7 +212,7 @@ async function build(k, family, nowMs = Date.now()) {
     return w;
   }
   let data, note = '';
-  try { data = cache(await load(k, nowMs)); } catch (e) { data = cache(); note = data ? 'Offline · last known' : e.message; }
+  try { data = cache(await load(k, nowMs)); await notify(data, nowMs).catch(() => {}); } catch (e) { data = cache(); note = data ? 'Offline · last known' : e.message; }
   if (!data) { text(w, 'Daily OS', Font.boldSystemFont(15)); text(w, note, Font.systemFont(12), C.muted, 3); return w; }
   const s = status(data.meta, data.blocks, nowMs);
   const nextLine = s.next ? `${s.next.title} · ${fmtTime(s.next.at)}` : 'Nothing else planned';
@@ -222,6 +274,10 @@ try {
   } else if (q.action === 'add') {
     const k = savedKey() || (await askKey());
     if (k) await addTask(k);
+  } else if (config.runsWithSiri) { // from a Shortcuts automation: just refresh notifications
+    const k = savedKey();
+    const n = k ? await notify(await load(k, Date.now())) : 0;
+    Script.setShortcutOutput(k ? `Daily OS: ${n} notifications lined up` : 'Daily OS: set up the widget key first');
   } else if (config.runsInWidget || config.runsInAccessoryWidget) {
     Script.setWidget(await build(savedKey(), config.widgetFamily));
   } else {

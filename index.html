@@ -101,7 +101,8 @@ button.off{opacity:.45}
 #gapChip{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 12%,var(--panel));font-weight:600;font-size:14px}
 #lotBtn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);font-weight:600}
 #lotCount{font-weight:600;color:var(--muted)}
-#main[data-mode="dash"] #planner,#main:not([data-mode="dash"]) #dash,#main[data-mode="dash"] #lotBtn{display:none}
+#main:not([data-mode="plan"]) #planner,#main:not([data-mode="dash"]) #dash,#main:not([data-mode="journal"]) #journal,#main:not([data-mode="plan"]) #lotBtn,#main[data-mode="journal"] #gapChip{display:none!important}
+#bar{overflow-x:auto;scrollbar-width:none}#bar::-webkit-scrollbar{display:none}#bar>*{flex-shrink:0}#bar .grow{flex:1 1 0;min-width:0}
 #planner{position:relative;display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;min-width:0}
 .heads{display:grid;grid-template-columns:var(--gut) 1fr 1fr;border-bottom:1px solid var(--line);background:var(--bg)}
 .heads div{padding:8px 10px;font-weight:600;font-size:13px}
@@ -201,6 +202,79 @@ body.dragging #scroller{touch-action:none}
 .dempty{color:var(--muted);padding:24px 4px;text-align:center}
 #tip{position:fixed;z-index:45;pointer-events:none;background:var(--fg);color:var(--bg);font-size:13px;line-height:1.4;padding:8px 10px;border-radius:10px;white-space:pre-line;max-width:260px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
 
+/* ---- To Myself (journal): paper, serif for writing, one calm accent ---- */
+:root{--paper:#f8f4ec;--ink:#2a251f;--ink2:#6f665a;--rule:#e4dccd;--jfield:#fffdf8;--jaccent:#4f6d8a;--serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif}
+@media (prefers-color-scheme:dark){:root{--paper:#1b1916;--ink:#e9e3d7;--ink2:#a69d8f;--rule:#35312b;--jfield:#23211d;--jaccent:#8fb0cf}}
+#journal{overflow-y:auto;background:var(--paper);color:var(--ink);-webkit-overflow-scrolling:touch;min-height:0}
+.jtop{position:sticky;top:0;z-index:5;background:var(--paper);padding:14px 16px 6px;border-bottom:1px solid var(--rule)}
+.jcap,.jtags,.jnav{max-width:720px;margin-left:auto;margin-right:auto}
+.jcap{display:flex;gap:8px}
+#jIn{flex:1;min-width:0;min-height:56px;font:18px var(--serif);padding:10px 14px;border:1.5px solid var(--rule);border-radius:14px;background:var(--jfield);color:var(--ink)}
+#jIn::placeholder{color:var(--ink2)}
+#jIn:focus{outline:none;border-color:var(--jaccent)}
+.jsave{min-height:56px;min-width:80px;border:0;border-radius:14px;background:var(--jaccent);color:#fff;font-weight:600;font-size:16px}
+.jmic{min-height:56px;min-width:56px;padding:0;border:1.5px solid var(--rule);border-radius:14px;background:transparent;color:var(--ink2)}
+.jmic.on{color:var(--jaccent);border-color:var(--jaccent);background:color-mix(in srgb,var(--jaccent) 10%,transparent)}
+.jtags{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.jtag,.jchip{min-height:40px;border:1px solid var(--rule);background:transparent;color:var(--ink);border-radius:20px;padding:0 12px;font-size:14px;gap:6px}
+.jtag.on{border-color:var(--t);background:color-mix(in srgb,var(--t) 16%,transparent);font-weight:600}
+.ji{color:var(--t);font-size:15px;line-height:1;font-variant-emoji:text}
+.jnav{display:flex;gap:4px;margin-top:10px}
+.jtab{flex:1;min-height:44px;border:0;border-radius:10px;background:transparent;color:var(--ink2);font-weight:600;padding:0 6px;white-space:nowrap}
+.jtab.on{background:color-mix(in srgb,var(--jaccent) 14%,transparent);color:var(--ink)}
+.jbody,.jfoot{max-width:720px;margin:0 auto;padding:6px 20px 16px}
+.jfoot{padding-bottom:48px;text-align:center;color:var(--ink2);font-size:13px}
+.jfoot p{margin:4px 0 0}
+.jlink{border:0;background:transparent;color:var(--jaccent);font-weight:600}
+.jdate{font:italic 17px var(--serif);color:var(--ink2);margin:12px 0 0}
+.jsec{padding:16px 0;border-bottom:1px solid var(--rule)}
+.jsec h3{margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink2);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.jsec h3 span{text-transform:none;letter-spacing:0;font-weight:400;font-style:italic;font-family:var(--serif);font-size:14px}
+.jq{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.jl{font-size:14px;color:var(--ink2)}
+.jl em{font-style:normal;opacity:.85}
+.jfield,.jnote{font:18px/1.45 var(--serif);color:var(--ink);background:var(--jfield);border:1px solid var(--rule);border-radius:12px;padding:10px 12px;width:100%;min-height:48px}
+.jfield{resize:none;overflow:hidden;display:block}
+.jq.main .jl{color:var(--ink);font-weight:600;font-size:15px}
+.jq.main .jfield{border-color:color-mix(in srgb,var(--jaccent) 50%,var(--rule))}
+.jfield:focus,.jnote:focus{outline:none;border-color:var(--jaccent)}
+.jreread{margin:2px 0 16px;padding:10px 14px;border-left:3px solid var(--jaccent);background:color-mix(in srgb,var(--jaccent) 7%,transparent);border-radius:0 10px 10px 0}
+.jreread p{margin:4px 0;font:italic 17px/1.45 var(--serif)}
+.jreread cite{font-size:12px;color:var(--ink2);font-style:normal}
+.jfrags,.jbook,.jtasks{list-style:none;margin:0;padding:0}
+.jfrag{display:flex;gap:12px;align-items:baseline;padding:10px 4px;border-bottom:1px dashed var(--rule);cursor:pointer;min-height:48px}
+.jfrag time{font-size:12px;color:var(--ink2);font-variant-numeric:tabular-nums;min-width:62px}
+.jt{flex:1;font:17px/1.4 var(--serif)}
+.jicons{display:inline-flex;gap:5px}
+.jhint{color:var(--ink2);font:italic 16px/1.45 var(--serif);margin:10px 0 0}
+.jwelcome{padding:36px 0 24px}
+.jwelcome h2{font:500 32px var(--serif);margin:0 0 6px}
+.jwelcome p{color:var(--ink2);font:18px var(--serif);margin:0 0 22px}
+.jbtn{min-height:44px;border:1px solid var(--rule);background:transparent;color:var(--ink);border-radius:12px;padding:0 18px;font-weight:600}
+.jbtn.sm{min-height:40px;padding:0 12px;font-size:14px}
+.jchips{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 4px}
+.jchip.on{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:600}
+.jchip.on .ji{color:inherit}
+.jmonth h3{font:500 21px var(--serif);margin:24px 0 6px}
+.jentry{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:baseline;padding:12px 4px;border-bottom:1px solid var(--rule);cursor:pointer;min-height:48px}
+.jentry p{margin:0;font:18px/1.45 var(--serif)}
+.jentry.note p{font-style:italic}
+.jentry time{font-size:12px;color:var(--ink2);white-space:nowrap}
+.jempty{color:var(--ink2);font:italic 17px/1.55 var(--serif);padding:28px 0}
+.jtask{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.jtt{flex:1 1 220px;min-width:0}
+.jtt p{margin:0;font:18px/1.4 var(--serif)}
+.jtt time{font-size:12px;color:var(--ink2)}
+.jtask.moved .jtt{opacity:.55}
+.jta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.jmoved{display:flex;align-items:center;gap:6px;font-size:14px;min-height:40px;padding:0 4px;color:var(--ink2)}
+.jmoved input{width:22px;height:22px;accent-color:var(--jaccent)}
+.pop.jpop{background:var(--paper);color:var(--ink);border-color:var(--rule)}
+.jpop textarea{min-height:84px;overflow:auto}
+.jpop .jl{font-size:12px}
+@media (prefers-color-scheme:dark){.jsave{color:#14130f}}
+@media (max-width:699px){.jbody,.jfoot{padding-left:16px;padding-right:16px}.jtop{padding:10px 12px 6px}}
+
 /* ---- Overlays ---- */
 #scrim{position:fixed;inset:0;z-index:20;display:none;background:transparent}
 #scrim.dim{background:rgba(0,0,0,.35)}
@@ -272,6 +346,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
     <div id="bar">
       <button class="tab sel" data-mode="plan" role="tab" aria-selected="true">Planner</button>
       <button class="tab" data-mode="dash" role="tab" aria-selected="false">Dashboard</button>
+      <button class="tab" data-mode="journal" role="tab" aria-selected="false">To Myself</button>
       <span class="grow"></span>
       <button id="gapChip" hidden></button>
       <button id="lotBtn" aria-pressed="false">Parking lot <span id="lotCount"></span></button>
@@ -294,6 +369,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
       </aside>
     </section>
     <section id="dash" aria-label="Dashboard"></section>
+    <section id="journal" aria-label="To Myself"></section>
   </main>
 </div>
 <div id="scrim"></div>

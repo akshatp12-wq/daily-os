@@ -468,6 +468,105 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await c.close();
   }
 
+  // ======================= To Myself (journal tab) =======================
+  {
+    const { c, p, errs } = await open(1180, 820);
+    const jt = () => p.evaluate(() => JSON.parse(localStorage.getItem('dailyos.journal')));
+    await p.click('#bar .tab[data-mode="journal"]');
+    ok('journal: third tab opens beside Planner and Dashboard', (await p.$$eval('#bar .tab', (els) => els.map((e) => e.textContent))).join('|') === 'Planner|Dashboard|To Myself');
+    ok('journal: replaces the right side, rail stays', (await box(p, '#journal')).vis && !(await box(p, '#planner')).vis && !(await box(p, '#dash')).vis && (await box(p, '#rail')).vis);
+    ok('journal: planner-only buttons hidden', !(await box(p, '#lotBtn')).vis && !(await box(p, '#gapChip')).vis && (await box(p, '#bar')).h === 44);
+    ok('journal: capture bar sits at the top', (await box(p, '#jIn')).y < 80 && (await box(p, '.jsave')).h >= 44);
+    const labels = await p.$$eval('.jsec .jq .jl', (els) => els.map((e) => e.firstChild.textContent));
+    ok('journal: morning questions, then evening in order', labels.join('|') === 'Today may test me with|Mine to control|One thing that matters|Went well|Next time|Letting go', labels.join('|'));
+    ok('journal: only the one thing is required', (await p.$$eval('.jsec .jq em', (els) => els.map((e) => e.textContent))).join('|') === ' · optional| · optional');
+    // capture in two taps: field + Save
+    await p.click('#jIn'); await p.keyboard.type('call mom #task');
+    ok('journal: optional tags appear while typing', !(await p.$eval('.jtags', (e) => e.hidden)));
+    await p.click('.jsave');
+    let J = await jt();
+    ok('journal: capture saves with #tag and timestamp', J.frags.length === 1 && J.frags[0].text === 'call mom' && J.frags[0].tags.join() === 'task' && J.frags[0].day === DAY && J.frags[0].at === new Date(NOW).getTime());
+    await p.fill('#jIn', 'great call with the MD');
+    await p.click('.jtag[data-tag="win"]');
+    await p.press('#jIn', 'Enter');
+    J = await jt();
+    ok('journal: tag chip at capture', J.frags[1].tags.join() === 'win');
+    ok('journal: fragments listed with time', (await p.$$eval('.jfrag time', (els) => els.map((e) => e.textContent))).length === 2);
+    ok('journal: one line is a whole day', /whole day/.test(await p.$eval('.jsec:nth-of-type(2) .jhint', (e) => e.textContent).catch(() => '')) || (await p.$eval('#journal', (e) => e.textContent)).includes('That’s a whole day'));
+    await p.fill('.jfield[data-f="m3"]', 'Send the model'); await p.click('.jdate');
+    await p.waitForTimeout(400);
+    ok('journal: answers save as you type', (await jt()).days[DAY].m3 === 'Send the model' && (await jt()).days[DAY].q.join('|') === 'Today may test me with|Mine to control|One thing that matters');
+    await p.click('.jnote');
+    ok('journal: note to self starts with “You”', (await p.$eval('.jnote', (e) => e.value)) === 'You ');
+    await p.keyboard.type('did enough today.'); await p.press('.jnote', 'Enter');
+    ok('journal: note saved', (await jt()).days[DAY].note === 'You did enough today.');
+    // edit a fragment later: add a tag
+    await p.click('.jfrag >> nth=1');
+    await p.click('.jpop .jtag[data-tag="lesson"]');
+    await p.click('.jpop button.primary');
+    ok('journal: tags can be added later', (await jt()).frags[1].tags.sort().join() === 'lesson,win');
+    await p.screenshot({ path: path.join(SHOTS, '16-journal-today.png') });
+    // Book of lessons
+    await p.click('.jtab[data-view="book"]');
+    ok('journal: book filters', (await p.$$eval('.jchip', (els) => els.map((e) => e.textContent.replace(/^\W+/, '')))).join('|') === 'All|Lessons|Ideas|Wins|Triggers');
+    ok('journal: book groups by month, note + tagged items', (await p.$eval('.jmonth h3', (e) => e.textContent)) === 'October 2026' && (await p.$$('.jentry')).length === 2);
+    await p.click('.jchip:has-text("Wins")');
+    ok('journal: Wins filter', (await p.$$eval('.jentry p', (els) => els.map((e) => e.textContent))).join() === 'great call with the MD');
+    await p.click('.jchip:has-text("Triggers")');
+    ok('journal: empty filter is kind', /It’ll show up here/.test(await p.$eval('.jempty', (e) => e.textContent)));
+    await p.click('.jchip:has-text("Lessons")');
+    await p.screenshot({ path: path.join(SHOTS, '17-journal-book.png') });
+    // Tasks out
+    await p.click('.jtab[data-view="tasks"]');
+    ok('journal: task appears in Tasks out', (await p.$$eval('.jtask .jtt p', (els) => els.map((e) => e.textContent))).join() === 'call mom');
+    await p.click('.jtask >> text=To Parking lot');
+    ok('journal: To Parking lot adds it and marks it moved', (await st(p)).lot.some((x) => x.text === 'call mom') && (await jt()).frags[0].moved === true && (await p.$eval('.jtask input[type=checkbox]', (e) => e.checked)));
+    await p.click('.jtask input[type=checkbox]');
+    ok('journal: Moved can be unchecked', (await jt()).frags[0].moved === false);
+    await p.screenshot({ path: path.join(SHOTS, '18-journal-tasks.png') });
+    // export / import
+    await p.click('.jlink');
+    let [dl] = await Promise.all([p.waitForEvent('download'), p.click('.pop >> text=Export Markdown')]);
+    const md = fs.readFileSync(await dl.path(), 'utf8');
+    ok('journal: Markdown export', md.includes('# To Myself') && md.includes('- One thing that matters: Send the model') && md.includes('> You did enough today.'), md.slice(0, 80));
+    [dl] = await Promise.all([p.waitForEvent('download'), p.click('.pop >> text=Export JSON')]);
+    const exported = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
+    ok('journal: JSON export', exported.v === 1 && exported.frags.length === 2);
+    exported.frags.push({ id: 'imp', day: '2026-10-20', at: new Date('2026-10-20T15:00:00-05:00').getTime(), text: 'imported idea', tags: ['idea'] });
+    const impFile = path.join(SHOTS, 'journal-import.json');
+    fs.writeFileSync(impFile, JSON.stringify(exported));
+    const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.click('.pop >> text=Import JSON…')]);
+    await fc.setFiles(impFile); await p.waitForTimeout(300);
+    ok('journal: import adds without overwriting', /Brought in 1 entry and 0 answers/.test(await toastText(p)) && (await jt()).frags.length === 3, await toastText(p));
+    const txt = await p.$eval('#journal', (e) => e.textContent);
+    ok('journal: no streaks, counts or guilt copy', !/streak|missed|forgot|behind|overdue|you should/i.test(txt));
+    ok('journal: other tabs untouched', await (async () => { await p.click('#bar .tab[data-mode="plan"]'); return (await box(p, '#planner')).vis && (await p.$$('#grid .blk')).length > 0; })());
+    ok('journal: no console errors', errs.length === 0, errs.join(' | '));
+    await c.close();
+  }
+  {
+    // after 2+ empty days: welcome back, only the one thing; a past lesson to reread
+    const jdata = { v: 1, start: '2026-10-01', days: { '2026-10-20': { note: 'You can start before you feel ready.' } }, frags: [] };
+    const { c, p, errs } = await open(1180, 820, { extra: `localStorage.setItem('dailyos.journal', ${JSON.stringify(JSON.stringify(jdata))});` });
+    await p.click('#bar .tab[data-mode="journal"]');
+    ok('journal: welcome back after a gap, one field only', (await p.$eval('.jwelcome h2', (e) => e.textContent).catch(() => '')) === 'Welcome back.' && (await p.$$('.jbody .jfield')).length === 1 && !/yesterday|catch up on/i.test(await p.$eval('#journal', (e) => e.textContent)));
+    await p.screenshot({ path: path.join(SHOTS, '19-journal-welcome.png') });
+    await p.fill('.jfield[data-f="m3"]', 'One email to the lender');
+    await p.click('.jwelcome .jbtn');
+    ok('journal: then the normal page', (await p.$$('.jbody .jfield')).length === 6);
+    const rr = await p.evaluate(() => { const q = document.querySelector('.jreread'), m = document.querySelector('.jfield[data-f="m3"]'); return q && [q.textContent, q.getBoundingClientRect().top < m.getBoundingClientRect().top]; });
+    ok('journal: a past lesson to reread, above the one thing', !!rr && rr[0].includes('You can start before you feel ready.') && rr[1]);
+    ok('journal: welcome-back has no console errors', errs.length === 0, errs.join(' | '));
+    await c.close();
+  }
+  for (const [w, hh, dark, shot, mobile] of [[1180, 820, true, '20-journal-dark.png', false], [390, 844, false, '21-journal-phone.png', true]]) {
+    const { c, p, errs } = await open(w, hh, { dark, mobile, extra: `localStorage.setItem('dailyos.journal', ${JSON.stringify(JSON.stringify({ v: 1, start: '2026-10-01', days: { '2026-10-20': { note: 'You can start before you feel ready.' }, [DAY]: { m3: 'Send the model' } }, frags: [{ id: 'f', day: DAY, at: new Date(NOW).getTime() - 3600e3, text: 'felt the pull to scroll', tags: ['trigger'] }] }))});` });
+    await p.click('#bar .tab[data-mode="journal"]');
+    await p.screenshot({ path: path.join(SHOTS, shot) });
+    ok(`journal ${dark ? 'dark' : 'phone'}: renders cleanly`, (await box(p, '#jIn')).vis && errs.length === 0, errs.join(' | '));
+    await c.close();
+  }
+
   // ======================= Sync through a private GitHub repo =======================
   {
     const api = `${BASE}gh`;

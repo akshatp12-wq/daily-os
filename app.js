@@ -1,6 +1,7 @@
 import * as L from './logic.js';
 import { weekBars, spark } from './charts.js';
 import * as S from './sync.js';
+import { createJournal } from './journal.js';
 
 const SLOT_PX = 28, KEY = 'dailyos', HOLD = 250;
 const $ = (s) => document.querySelector(s);
@@ -27,7 +28,7 @@ function h(tag, props = {}, ...kids) {
 
 // ---- State ----
 const fresh = () => ({ v: 2, cats: L.DEFAULT_CATS.map((c) => ({ ...c })), blocks: [], timer: null, lastCat: 'work', lot: [], gapSkip: [] });
-let state = load(), saveWarned = false;
+let state = load(), saveWarned = false, journal = null;
 function load() {
   let raw;
   try { raw = localStorage.getItem(KEY); } catch { return fresh(); }
@@ -112,7 +113,8 @@ function render() {
   renderRail();
   renderBar();
   if (mode === 'plan') { renderGrid(); if (lotOpen && !lotDrag) renderLot(); }
-  else renderDash();
+  else if (mode === 'dash') renderDash();
+  else if (journal) journal.render();
   tick();
 }
 
@@ -1037,7 +1039,7 @@ function startSync(cfg, keep = true) {
     getState: () => state,
     applyState: (next) => { state = { ...fresh(), ...next }; persist(); render(); },
     // Don't swap data under an open editor or a drag; sheets that don't edit data are safe.
-    isBusy: () => dragging() || !!(overlay && !['menu', 'month', 'sealed', 'copy', 'setup', 'unlock'].includes(overlay.kind)),
+    isBusy: () => dragging() || !!(overlay && !['menu', 'month', 'sealed', 'copy', 'setup', 'unlock', 'jitem', 'jio'].includes(overlay.kind)),
     onStatus: setSync,
     loadBase: () => { try { const b = JSON.parse(localStorage.getItem(BASE)); return b && b.repo === cfg.repo ? b : null; } catch { return null; } },
     saveBase: (b) => { try { localStorage.setItem(BASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
@@ -1191,6 +1193,18 @@ function openFromHash() {
   lotIn.focus();
 }
 addEventListener('hashchange', openFromHash);
+
+// ---- To Myself (journal tab; stays on this device) ----
+function addToLot(text) {
+  const p = L.parseTask(text, state.cats);
+  const item = { id: uid(), text: (p.text || String(text)).slice(0, 200), min: p.min, at: Date.now() };
+  if (!p.timed) item.timed = false;
+  if (p.cat) item.cat = p.cat;
+  state.lot.push(item);
+  save(); renderBar();
+  if (lotOpen) renderLot();
+}
+journal = createJournal({ h, toast, showOverlay, closeOverlay, deliver, copyText, addToLot });
 
 // ---- Wiring ----
 const goto = (key) => { view = key; monthCur = monthOf(key); closeOverlay(); render(); if (mode === 'plan') scrollToDefault(); };

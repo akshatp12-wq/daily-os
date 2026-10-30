@@ -134,6 +134,7 @@ test('data validation v2', () => {
   assert.equal(L.validateData(v2({ cats: [{ id: 'a', name: 'A', color: '#111111', drift: false }, { id: 'a', name: 'B', color: '#222222', drift: false }] })), false);
   assert.equal(L.validateData(v2({ cats: [] })), false);
   assert.equal(L.validateData(v2({ lot: [{ id: 'l', text: 'x', min: 20, at: 1 }] })), false);
+  assert.equal(L.validateData(v2({ lot: [{ id: 'l', text: 'x', min: 5, at: 1 }] })), true);
   assert.equal(L.validateData(v2({ lot: [{ id: 'l', text: 'x', min: 30, at: 1, cat: 'life' }] })), true);
   assert.equal(L.validateData(v2({ lot: [{ id: 'l', text: 'x', min: 30, at: 1, cat: 'gone' }] })), false);
   assert.equal(L.validateData(v2({ gapSkip: undefined })), false);
@@ -188,7 +189,10 @@ test('parseTask durations', () => {
   assert.deepEqual(p('model 1h 30m'), ['model', 90, true]);
   assert.deepEqual(p('prep 2 hours'), ['prep', 120, true]);
   assert.deepEqual(p('read 20 min'), ['read', 30, true]);
-  assert.deepEqual(p('ping MD 5m'), ['ping MD', 15, true]);
+  assert.deepEqual(p('ping MD 5m'), ['ping MD', 5, true]);
+  assert.deepEqual(p('text Sam 2 min'), ['text Sam', 5, true]);
+  assert.deepEqual(p('sign form 7 min'), ['sign form', 10, true]);
+  assert.deepEqual(p('email 12 min'), ['email', 15, true]);
   assert.deepEqual(p('email lender'), ['email lender', 30, false]);
   assert.deepEqual(p('review $5m model'), ['review $5m model', 30, false]);
   assert.deepEqual(p('5M deal'), ['5M deal', 30, false]);
@@ -220,6 +224,27 @@ test('lot groups by duration', () => {
   assert.deepEqual(g.quick.map((x) => x.id), ['e', 'f', 'b']);
   assert.deepEqual(g.medium.map((x) => x.id), ['c', 'd']);
   assert.deepEqual(g.long.map((x) => x.id), ['a', 'g']);
+  const t = L.lotGroups([it('x', 10, 1), it('y', 5, 2), it('z', 15, 3)]);
+  assert.deepEqual([t.tiny.map((x) => x.id), t.quick.map((x) => x.id)], [['y', 'x'], ['z']]);
+});
+
+test('task lengths under 15 min and their stepper', () => {
+  assert.deepEqual([1, 5, 6, 10, 14, 15, 16, 500].map(L.taskMin), [5, 5, 10, 10, 15, 15, 30, 480]);
+  assert.deepEqual([5, 10, 15, 30, 480].map(L.validTaskMin), [true, true, true, true, true]);
+  assert.deepEqual([0, 7, 20, 495].map(L.validTaskMin), [false, false, false, false]);
+  assert.deepEqual([L.stepTask(5, 1), L.stepTask(10, 1), L.stepTask(15, 1), L.stepTask(30, -1), L.stepTask(15, -1), L.stepTask(10, -1), L.stepTask(5, -1), L.stepTask(480, 1)], [10, 15, 30, 15, 10, 5, 5, 480]);
+});
+
+test('batch quick hits into one block', () => {
+  const it = (id, text, min, cat) => ({ id, text, min, at: 1, ...(cat ? { cat } : {}) });
+  const b = L.batchOf([it('a', 'call franchise', 10, 'life'), it('b', 'email lender', 5, 'life'), it('c', 'sign form', 5, 'life')]);
+  assert.deepEqual([b.title, b.total, b.min, b.cat], ['Quick hits: call franchise, email lender, sign form', 20, 30, 'life']);
+  assert.equal(b.note, '• call franchise (10m)\n• email lender (5m)\n• sign form (5m)');
+  assert.equal(L.batchOf([it('a', 'x', 5, 'life'), it('b', 'y', 5)]).cat, null);
+  assert.equal(L.batchOf([it('a', 'x', 5), it('b', 'y', 10)]).min, 15);
+  const long = L.batchOf(Array.from({ length: 30 }, (_, i) => it('i' + i, 'task number ' + i, 5)));
+  assert.ok(long.title.length <= 121 && long.title.endsWith('…'), long.title);
+  assert.equal(long.min, 150);
 });
 
 // ---- gaps ----

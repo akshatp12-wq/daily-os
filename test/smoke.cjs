@@ -103,6 +103,8 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await layout(p, 1180, 820, '1180×820');
     const last = await p.evaluate(() => { const r = [...document.querySelectorAll('#timers .tbtn')].at(-1).getBoundingClientRect(); return { b: Math.round(r.bottom) }; });
     ok('1180×820: all 5 timers visible without scrolling', last.b <= 820, `last timer bottom ${last.b}`);
+    const capT = await p.evaluate(() => [document.querySelector('#capText').textContent, document.querySelector('#actText').textContent, parseFloat(document.querySelector('#capFill').style.width).toFixed(1)]);
+    ok('rail: Plan and Actual bars track the 24h day', capT[0] === '3h 45m / 24h' && capT[1] === '1h 45m / 24h' && capT[2] === (225 / 1440 * 100).toFixed(1), capT.join(' | '));
     await p.screenshot({ path: path.join(SHOTS, '01-ipad-planner.png') });
 
     // --- Fill the gaps ---
@@ -189,7 +191,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     ok('lot: Enter saves and clears for the next line', (await p.$eval('#lotIn', (e) => e.value === '' && document.activeElement === e)) && (await st(p)).lot.length === 1);
     for (const t of ['#Career update resume 45 min', 'LBO practice 2h', 'email lender']) { await p.fill('#lotIn', t); await p.press('#lotIn', 'Enter'); }
     const secs = await p.$$eval('#lotList .lsec', (els) => els.map((s) => [s.querySelector('h4 span').textContent, [...s.querySelectorAll('.itxt')].map((x) => x.textContent)]));
-    ok('lot: sorted into Quick / Medium / Long, shortest first', JSON.stringify(secs) === JSON.stringify([['Quick · 30m or less', ['call franchise', 'email lender']], ['Medium · 45–75m', ['update resume']], ['Long · 90m+', ['LBO practice']]]), JSON.stringify(secs));
+    ok('lot: sorted into Quick / Medium / Long, shortest first', JSON.stringify(secs) === JSON.stringify([['Quick · 15–30m', ['call franchise', 'email lender']], ['Medium · 45–75m', ['update resume']], ['Long · 90m+', ['LBO practice']]]), JSON.stringify(secs));
     const tagged = await p.$eval('#lotList .item.tagged', (e) => [e.querySelector('.itxt').textContent, e.querySelector('.itag').textContent, e.style.getPropertyValue('--c')]);
     ok('lot: #Career links and colors the task', JSON.stringify(tagged) === JSON.stringify(['update resume', 'Career', '#059669']), JSON.stringify(tagged));
     ok('lot: no stray text from empty sections', !/null|undefined/.test(await p.$eval('#lotList', (e) => e.textContent)));
@@ -235,6 +237,23 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     ok('lot: ✕ deletes', (await st(p)).lot.length === 0);
     await p.click('#toast button');
     ok('lot: delete has Undo', (await st(p)).lot.length === 1);
+    // quick hits under 15 min batch into one block
+    for (const t of ['text Sam 5 min #Life', 'sign form 10 min #Life']) { await p.fill('#lotIn', t); await p.press('#lotIn', 'Enter'); }
+    const qh = await p.$$eval('#lotList .lsec', (els) => els.map((x) => x.querySelector('h4 span').textContent));
+    ok('lot: tasks under 15 min collect as Quick hits', qh[0] === 'Quick hits · under 15m' && (await p.$eval('#lotList .item.batch', (e) => e.textContent)) === 'Batch all 2 into one block15m', qh.join('|'));
+    ok('lot: small task shows its real length', (await p.$$eval('#lotList .idur', (els) => els.map((e) => e.textContent))).includes('5m'));
+    await seeMin(p, 900);
+    await mouseDrag(p, await p.$eval('#lotList .item.batch', (e) => { const r = e.getBoundingClientRect(); return { x: r.left + 30, y: r.top + r.height / 2 }; }), await slotXY(p, 'plan', 900), 12);
+    let qb = (await st(p)).blocks.find((b) => b.layer === 'plan' && b.start === 900);
+    ok('lot: dragging the batch makes one block for all quick hits', !!qb && qb.end === 915 && qb.title === 'Quick hits: text Sam, sign form' && qb.cat === 'life' && qb.note.includes('sign form (10m)') && !(await st(p)).lot.some((x) => x.min < 15), qb ? JSON.stringify(qb) : 'none');
+    ok('lot: shared #category, so no prompt', (await p.$$('.pop')).length === 0);
+    await p.click('#toast button');
+    ok('lot: batch Undo returns every task', (await st(p)).lot.filter((x) => x.min < 15).length === 2 && !(await st(p)).blocks.some((b) => b.title.startsWith('Quick hits')));
+    await p.click('#lotList .item:has(.itxt:text-is("text Sam")) .itxt');
+    await p.click('.pop [aria-label="Time more"]');
+    ok('lot: stepper goes 5 → 10 → 15', (await st(p)).lot.find((x) => x.text === 'text Sam').min === 10);
+    await p.click('.pop button.primary');
+    for (const t of ['text Sam', 'sign form']) await p.click(`#lotList .item:has(.itxt:text-is("${t}")) .idel`);
     // block -> back to the lot
     await seeMin(p, 540);
     await p.click('#grid [data-id="p3"] .bt');

@@ -145,7 +145,7 @@ export function parseTask(line, cats = []) {
   }
   let min = 30;
   if (hit) {
-    min = Math.min(MAX_TASK, Math.max(STEP, ceil15(hit.v)));
+    min = taskMin(hit.v);
     const before = text.slice(0, hit.start).replace(/\s*(?:\b(?:for|about|approx\.?)\s*)?[-–—,:(~]*\s*$/i, '');
     const after = text.slice(hit.end).replace(/^\s*\)/, '');
     text = `${before} ${after}`;
@@ -153,11 +153,28 @@ export function parseTask(line, cats = []) {
   text = text.replace(/\s+/g, ' ').replace(/^[\s\-–—,:]+|[\s\-–—,:]+$/g, '').slice(0, 200);
   return { text, min, timed: !!hit, cat };
 }
-export const lotBucket = (min) => (min <= 30 ? 'quick' : min <= 75 ? 'medium' : 'long');
+// Task lengths: 5 or 10 min for quick hits, otherwise 15-min steps; always rounded up, capped at 8h.
+export const TINY = [5, 10];
+export const taskMin = (v) => (v < STEP ? Math.max(5, Math.ceil(v / 5) * 5) : Math.min(MAX_TASK, ceil15(v)));
+export const validTaskMin = (m) => Number.isInteger(m) && (TINY.includes(m) || (m % STEP === 0 && m >= STEP && m <= MAX_TASK));
+// Stepper for a task's length: 5 → 10 → 15 → 30 → 45 …
+export function stepTask(min, dir) {
+  const n = dir > 0 ? (min < STEP ? min + 5 : min + STEP) : (min <= STEP ? min - 5 : min - STEP);
+  return validTaskMin(n) ? n : min;
+}
+export const lotBucket = (min) => (min < STEP ? 'tiny' : min <= 30 ? 'quick' : min <= 75 ? 'medium' : 'long');
 export function lotGroups(items) {
-  const g = { quick: [], medium: [], long: [] };
+  const g = { tiny: [], quick: [], medium: [], long: [] };
   for (const x of [...items].sort((a, b) => a.min - b.min || a.at - b.at)) g[lotBucket(x.min)].push(x);
   return g;
+}
+// Quick hits (under 15 min) scheduled together as one block.
+export function batchOf(items) {
+  const total = items.reduce((s, x) => s + x.min, 0), cats = new Set(items.map((x) => x.cat || null));
+  let title = `Quick hits: ${items.map((x) => x.text).join(', ')}`;
+  if (title.length > 120) title = title.slice(0, 117).replace(/,?\s*\S*$/, '') + '…';
+  return { title, total, min: Math.min(MAX_TASK, Math.max(STEP, ceil15(total))), cat: cats.size === 1 ? [...cats][0] : null,
+    note: items.map((x) => `• ${x.text} (${x.min}m)`).join('\n') };
 }
 
 // ---- Categories ----
@@ -255,6 +272,7 @@ export function buildICS(blocks, { layer = 'plan', now = Date.now(), cats = DEFA
     L.push('BEGIN:VEVENT', `UID:${b.id}@dailyos`, `DTSTAMP:${icsTime(now)}`,
       `DTSTART:${icsTime(minToMs(b.day, b.start))}`, `DTEND:${icsTime(minToMs(b.day, b.end))}`,
       `SEQUENCE:${b.seq || 0}`, `SUMMARY:${icsEscape(title)}`, `CATEGORIES:${icsEscape(catName(cats, b.cat))}`,
+      ...(b.note ? [`DESCRIPTION:${icsEscape(b.note)}`] : []),
       'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape('Starting: ' + title)}`, 'TRIGGER:PT0M', 'END:VALARM',
       'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape('5 min left: ' + title)}`, 'TRIGGER;RELATED=END:-PT5M', 'END:VALARM',
       'END:VEVENT');
@@ -290,7 +308,7 @@ export function validBlock(b, ids) {
     (b.layer === 'plan' || b.layer === 'actual') && ids.has(b.cat) && typeof b.title === 'string';
 }
 const validItem = (x, ids) => !!x && typeof x.id === 'string' && typeof x.text === 'string' && x.text.length >= 1 && x.text.length <= 200 &&
-  Number.isInteger(x.min) && x.min % STEP === 0 && x.min >= STEP && x.min <= MAX_TASK && (x.cat == null || ids.has(x.cat)) && Number.isFinite(x.at);
+  validTaskMin(x.min) && (x.cat == null || ids.has(x.cat)) && Number.isFinite(x.at);
 export function validateData(d) {
   if (!d || typeof d !== 'object' || d.v !== 2 || !validCats(d.cats) || !Array.isArray(d.blocks) || !Array.isArray(d.lot) || !Array.isArray(d.gapSkip)) return false;
   const ids = new Set(d.cats.map((c) => c.id));

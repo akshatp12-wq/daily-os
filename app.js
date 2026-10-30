@@ -118,10 +118,14 @@ function render() {
 
 function renderRail() {
   $('#dayLabel').replaceChildren(fmtDay(view), view === today() ? h('small', {}, 'Today') : '');
-  const planned = mins(view, 'plan'), cap = planned / L.WAKE_MIN, act = mins(view, 'actual');
-  $('#capFill').style.width = Math.min(100, cap * 100) + '%';
-  $('#cap').className = 'cap' + (cap > 1 ? ' over' : cap > 0.85 ? ' warn' : '');
-  $('#capText').textContent = `${fmtH(planned)} planned · ${Math.round(cap * 100)}% of 16h`;
+  // Plan and Actual against the whole day (24h; 23h/25h on DST days). Plan past 16h means no room to sleep.
+  const planned = mins(view, 'plan'), act = mins(view, 'actual'), day = L.dayMinutes(view), dh = `${day / 60}h`;
+  $('#capFill').style.width = Math.min(100, (planned / day) * 100) + '%';
+  $('#actFill').style.width = Math.min(100, (act / day) * 100) + '%';
+  $('#cap').className = 'cap' + (planned > L.WAKE_MIN ? ' over' : '');
+  $('#capText').textContent = `${fmtH(planned)} / ${dh}`;
+  $('#actText').textContent = `${fmtH(act)} / ${dh}`;
+  $('#cap').title = `Planned ${Math.round((planned / day) * 100)}%, logged ${Math.round((act / day) * 100)}% of the day${planned > L.WAKE_MIN ? ' · more than 16h planned' : ''}`;
   $('#planTot').textContent = planned ? fmtH(planned) : '';
   $('#actTot').textContent = act ? fmtH(act) : '';
   $('#fireBtn').classList.toggle('off', fireCutoff() == null);
@@ -296,7 +300,7 @@ function openPop(b, { ask = false } = {}) {
     b[field] = nb[field]; save(); render(); sync();
   };
   const el = h('div', { class: 'pop', role: 'dialog', 'aria-label': 'Edit block' },
-    input, ask ? h('p', { class: 'ask' }, 'Which category?') : null, h('div', { class: 'chips' }, chips),
+    input, b.note ? h('p', { class: 'muted note' }, b.note) : null, ask ? h('p', { class: 'ask' }, 'Which category?') : null, h('div', { class: 'chips' }, chips),
     stepRow('Start', startV, () => shift('start', -L.STEP), () => shift('start', L.STEP)),
     stepRow('End', endV, () => shift('end', -L.STEP), () => shift('end', L.STEP)),
     b.layer === 'plan' ? h('button', { onclick: () => toLot(b) }, 'Move to parking lot') : null,
@@ -445,7 +449,7 @@ function lotMove(e) {
     if (d.prev) { d.prev.remove(); d.prev = null; }
     return;
   }
-  const max = L.dayMinutes(view), len = Math.min(d.item.min, max);
+  const max = L.dayMinutes(view), len = Math.min(Math.max(L.STEP, d.item.min), max);
   const start = clamp(Math.floor((e.clientY - pr.top) / SLOT_PX) * L.STEP, 0, max - len);
   const c = catOf(d.item.cat && hasCat(d.item.cat) ? d.item.cat : pickCat());
   if (!d.prev) { d.prev = h('div', { class: 'blk plan preview' }, h('div', { class: 'bt' }, d.item.text)); cols.plan.append(d.prev); }
@@ -458,7 +462,7 @@ function lotMove(e) {
 function lotUp() {
   const { item, moved, start, bad } = lotDrag;
   endLot();
-  if (!moved) return openItemPop(item);
+  if (!moved) return item.batch ? toast('Drag this onto the Plan to schedule all quick hits as one block', '', null, 3500) : openItemPop(item);
   if (start == null) return;
   if (bad) return toast('That slot is taken');
   schedule(item, start);
@@ -473,17 +477,19 @@ function endLot() {
   document.body.classList.remove('dragging');
   lotDrag = null;
 }
+// item is one task, or a batch of quick hits ({ batch: [tasks] }) scheduled as one block.
 function schedule(item, start) {
   const max = L.dayMinutes(view), linked = item.cat && hasCat(item.cat);
-  const b = { id: uid(), day: view, start, end: Math.min(start + item.min, max), layer: 'plan', cat: linked ? item.cat : pickCat(), title: item.text, note: '', seq: 0 };
+  const b = { id: uid(), day: view, start, end: Math.min(start + Math.max(L.STEP, item.min), max), layer: 'plan', cat: linked ? item.cat : pickCat(), title: item.text, note: item.note || '', seq: 0 };
   if (b.end - b.start < L.STEP || L.overlaps(state.blocks, b)) return toast('That slot is taken');
+  const taken = item.batch || [item], ids = new Set(taken.map((x) => x.id));
   state.blocks.push(b);
-  state.lot = state.lot.filter((x) => x.id !== item.id);
+  state.lot = state.lot.filter((x) => !ids.has(x.id));
   save(); render();
   if (!linked) openPop(b, { ask: true }); // #tagged items already know their category
-  toast(`Scheduled ${fmtH(b.end - b.start)} at ${fmtT(view, b.start)}`, 'Undo', () => {
+  toast(item.batch ? `Scheduled ${taken.length} quick hits as one ${fmtH(b.end - b.start)} block` : `Scheduled ${fmtH(b.end - b.start)} at ${fmtT(view, b.start)}`, 'Undo', () => {
     state.blocks = state.blocks.filter((x) => x.id !== b.id);
-    state.lot.push(item);
+    state.lot.push(...taken);
     closeOverlay(); save(); render();
   }, 5000);
 }
@@ -660,9 +666,24 @@ function renderLot() {
     if (!list.length) return null;
     return h('div', { class: 'lsec' }, h('h4', {}, h('span', {}, title), h('span', {}, `${list.length} · ${fmtH(list.reduce((s, x) => s + x.min, 0))}`)), list.map(itemEl));
   };
+  // Quick hits: tasks under 15 min, with a row that drags them all as one block.
+  const tiny = () => {
+    const list = g.tiny;
+    if (!list.length) return null;
+    const B = L.batchOf(list), kids = [h('h4', {}, h('span', {}, 'Quick hits · under 15m'), h('span', {}, `${list.length} · ${fmtH(B.total)}`))];
+    if (list.length > 1) {
+      const c = B.cat && hasCat(B.cat) ? catOf(B.cat) : null;
+      const virt = { id: '__batch', text: B.title, min: B.min, at: 0, note: B.note, batch: list, ...(c ? { cat: c.id } : {}) };
+      const el = h('div', { class: 'item batch' + (c ? ' tagged' : ''), style: c ? `--c:${c.color}` : null, 'data-lid': '__batch' },
+        h('span', { class: 'itxt' }, `Batch all ${list.length} into one block`), h('span', { class: 'idur' }, fmtH(B.min)));
+      el.addEventListener('pointerdown', (e) => onItemDown(e, virt, el));
+      kids.push(el);
+    }
+    return h('div', { class: 'lsec' }, kids, list.map(itemEl));
+  };
   lotList.replaceChildren(...(state.lot.length
-    ? [sec('quick', 'Quick · 30m or less'), sec('medium', 'Medium · 45–75m'), sec('long', 'Long · 90m+')].filter(Boolean) // empty sections are skipped
-    : [h('div', { class: 'lempty' }, 'Type a task and press Enter. Add a time like “20 min” and a category like #Career. Long-press a task and drag it onto the Plan to schedule it.')]));
+    ? [tiny(), sec('quick', 'Quick · 15–30m'), sec('medium', 'Medium · 45–75m'), sec('long', 'Long · 90m+')].filter(Boolean) // empty sections are skipped
+    : [h('div', { class: 'lempty' }, 'Type a task and press Enter. Add a time like “20 min” and a category like #Career. Long-press a task and drag it onto the Plan to schedule it. Tasks under 15 min collect as Quick hits you can drag as one block.')]));
 }
 function itemEl(x) {
   const c = x.cat && hasCat(x.cat) ? catOf(x.cat) : null;
@@ -695,10 +716,10 @@ function openItemPop(x) {
     durV.textContent = fmtH(x.min);
     chips.forEach((b) => b.classList.toggle('sel', (b.dataset.cat || null) === (x.cat && hasCat(x.cat) ? x.cat : null)));
   };
-  const step = (d) => { const n = x.min + d; if (n < L.STEP || n > L.MAX_TASK) return; x.min = n; delete x.timed; refresh(); };
+  const step = (dir) => { const n = L.stepTask(x.min, dir); if (n === x.min) return; x.min = n; delete x.timed; refresh(); };
   const el = h('div', { class: 'pop', role: 'dialog', 'aria-label': 'Edit task' },
     input, h('div', { class: 'chips' }, chips),
-    stepRow('Time', durV, () => step(-L.STEP), () => step(L.STEP)),
+    stepRow('Time', durV, () => step(-1), () => step(1)),
     h('p', { class: 'muted' }, 'Long-press and drag it onto the Plan column to schedule it.'),
     h('div', { class: 'row' }, h('button', { class: 'danger', onclick: () => delItem(x) }, 'Delete'), h('button', { class: 'primary', onclick: closeOverlay }, 'Done')));
   sync();

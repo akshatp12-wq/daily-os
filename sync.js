@@ -111,7 +111,7 @@ export function client({ repo, token, api = GH }) {
   };
   return {
     // [{ name, sha }] of data files; [] for an empty repo. Throws 'repo' if it can't be reached.
-    async list() {
+    async list(all = false) {
       const res = await call('');
       if (res.status === 404) {
         const j = await res.json().catch(() => ({}));
@@ -121,7 +121,7 @@ export function client({ repo, token, api = GH }) {
       if (res.status === 403) throw new SyncError('repo', 'The token doesn’t have access to this repository');
       if (!res.ok) throw new SyncError('error', `GitHub error ${res.status}`);
       const j = await res.json();
-      return Array.isArray(j) ? j.filter((f) => f.type === 'file' && isDataFile(f.name)).map((f) => ({ name: f.name, sha: f.sha })) : [];
+      return Array.isArray(j) ? j.filter((f) => f.type === 'file' && (all || isDataFile(f.name))).map((f) => ({ name: f.name, sha: f.sha })) : [];
     },
     async get(name) {
       const res = await call(name);
@@ -208,3 +208,49 @@ export function engine(cfg, hooks, device = 'device') {
     get lastOk() { return lastOk; },
   };
 }
+
+// ---- Single-file sync (the journal: journal.json in the same repo) ----
+// hooks: getState(), applyState(next), isBusy(), onStatus(status, msg), loadBase(), saveBase(b),
+//        merge(base, local, remote), valid(d)
+export function fileSync(cfg, name, hooks, device = 'device') {
+  const gh = client(cfg);
+  let running = false, again = false, t = 0, stopped = false;
+  const later = (ms) => { clearTimeout(t); if (!stopped) t = setTimeout(run, ms); };
+  async function once() {
+    const f = (await gh.list(true)).find((x) => x.name === name);
+    const base = f ? hooks.loadBase() : null; // no file yet = fresh start, never "deleted elsewhere"
+    const remote = f ? (base && base.sha === f.sha ? base.data : (await gh.get(name)).data) : null;
+    const local = JSON.parse(JSON.stringify(hooks.getState())), start = stable(local);
+    const merged = hooks.merge(base && base.data, local, remote);
+    if (!hooks.valid(merged)) throw new SyncError('error', 'Journal data didn’t pass validation; nothing was changed');
+    let sha = f ? f.sha : null;
+    if (!remote || !same(remote, merged)) {
+      sha = await gh.put(name, merged, sha, `Journal sync from ${device}`);
+      if (sha == null) return 'conflict';
+    }
+    if (hooks.isBusy()) return 'busy';
+    const now = hooks.getState();
+    const next = stable(now) === start ? merged : hooks.merge(JSON.parse(start), now, merged);
+    hooks.saveBase({ sha, data: merged });
+    if (!same(next, now)) hooks.applyState(next);
+    if (!same(next, merged)) again = true;
+    return 'ok';
+  }
+  async function run() {
+    if (stopped) return;
+    if (running) { again = true; return; }
+    if (hooks.isBusy()) return later(3000);
+    running = true;
+    try {
+      let r = 'conflict';
+      for (let i = 0; i < 4 && r === 'conflict'; i++) r = await once();
+      if (r === 'conflict') throw new SyncError('error', 'Another device kept saving the journal at the same time');
+      if (r === 'busy') later(3000); else hooks.onStatus('ok');
+    } catch (e) { hooks.onStatus(e.kind || 'error', e.message); }
+    finally { running = false; if (again) { again = false; later(1200); } }
+  }
+  return { run, touch: () => later(1500), stop: () => { stopped = true; clearTimeout(t); } };
+}
+// Shared three-way helpers (local wins a true conflict).
+export const pick3 = (b, l, r) => (same(l, b) ? r : same(r, b) ? l : l);
+export { mergeById };

@@ -1,7 +1,7 @@
 import * as L from './logic.js';
 import { weekBars, spark } from './charts.js';
 import * as S from './sync.js';
-import { createJournal } from './journal.js';
+import { createJournal, mergeJournal3, validJournal } from './journal.js';
 
 const SLOT_PX = 28, KEY = 'dailyos', HOLD = 250;
 const $ = (s) => document.querySelector(s);
@@ -1017,7 +1017,8 @@ const store = {
   set: (k, v, keep = true) => { try { (keep ? localStorage : sessionStorage).setItem(k, v); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch {} },
 };
-let syncCfg = null, syncer = null, sealedKey = null, sync = { s: 'off', msg: '' };
+let syncCfg = null, syncer = null, jsync = null, sealedKey = null, sync = { s: 'off', msg: '' };
+const JBASE = KEY + '.journal.base';
 try { syncCfg = JSON.parse(store.get(SYNC)); } catch {}
 const ua = navigator.userAgent, device = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad' : 'browser';
 const apiBase = () => store.get(KEY + '.syncApi') || S.GH; // test hook
@@ -1045,13 +1046,28 @@ function startSync(cfg, keep = true) {
     saveBase: (b) => { try { localStorage.setItem(BASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
     askFirst: askFirstSync,
   }, device);
+  // The journal syncs alongside, as journal.json in the same repo.
+  if (jsync) jsync.stop();
+  jsync = S.fileSync(cfg, 'journal.json', {
+    getState: () => journal.data,
+    applyState: (next) => journal.replace(next),
+    isBusy: () => dragging() || journal.busy() || !!(overlay && ['jitem', 'jio'].includes(overlay.kind)),
+    onStatus: (s, msg) => { if (s !== 'ok') setSync(s, msg); },
+    loadBase: () => { try { const b = JSON.parse(localStorage.getItem(JBASE)); return b && b.repo === cfg.repo ? b : null; } catch { return null; } },
+    saveBase: (b) => { try { localStorage.setItem(JBASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
+    merge: mergeJournal3, valid: validJournal,
+  }, device);
   setSync('syncing');
   syncer.run();
+  jsync.run();
+  if (mode === 'journal') journal.render();
 }
 function syncOff() {
   if (syncer) syncer.stop();
-  syncer = null; syncCfg = null;
-  store.del(SYNC); store.del(BASE);
+  if (jsync) jsync.stop();
+  syncer = null; jsync = null; syncCfg = null;
+  store.del(SYNC); store.del(BASE); store.del(JBASE);
+  if (mode === 'journal') journal.render();
   setSync('off');
   toast('Sync is off on this device. Your data stays here.');
 }
@@ -1066,7 +1082,7 @@ function syncSection() {
   if (syncCfg) {
     const bad = ['auth', 'repo', 'error'].includes(sync.s);
     return [h('h3', {}, 'Sync'), h('p', { class: 'muted' + (bad ? ' err' : '') }, syncLine()),
-      h('div', { class: 'row' }, h('button', { onclick: () => syncer && syncer.run() }, 'Sync now'), h('button', { onclick: () => copyText(S.widgetKey(syncCfg), 'Widget key copied. Paste it into Scriptable when asked — treat it like a password.') }, 'Copy widget key')),
+      h('div', { class: 'row' }, h('button', { onclick: syncAll }, 'Sync now'), h('button', { onclick: () => copyText(S.widgetKey(syncCfg), 'Widget key copied. Paste it into Scriptable when asked — treat it like a password.') }, 'Copy widget key')),
       store.get(SEALED) ? h('button', { onclick: () => copyText(store.get(SEALED), 'Sync key copied') }, 'Copy sync key') : null,
       bad ? h('button', { class: 'primary', onclick: openSyncSetup }, 'Set up again…') : null,
       h('button', { class: 'danger', onclick: syncOff }, 'Turn off sync on this device'), h('hr')];
@@ -1182,8 +1198,9 @@ async function initSync() {
   renderSyncDot();
   if (!syncCfg && sealedKey && !store.get(SKIP) && !overlay) openUnlock();
 }
-setInterval(() => { if (syncer && !document.hidden) syncer.run(); }, 20000);
-addEventListener('online', () => { if (syncer) syncer.run(); });
+const syncAll = () => { if (syncer) syncer.run(); if (jsync) jsync.run(); };
+setInterval(() => { if (!document.hidden) syncAll(); }, 20000);
+addEventListener('online', syncAll);
 // The widget's "Parking lot" button opens …/#lot
 function openFromHash() {
   if (location.hash !== '#lot') return;
@@ -1194,7 +1211,7 @@ function openFromHash() {
 }
 addEventListener('hashchange', openFromHash);
 
-// ---- To Myself (journal tab; stays on this device) ----
+// ---- Journal tab (syncs as journal.json when sync is on) ----
 function addToLot(text) {
   const p = L.parseTask(text, state.cats);
   const item = { id: uid(), text: (p.text || String(text)).slice(0, 200), min: p.min, at: Date.now() };
@@ -1204,7 +1221,7 @@ function addToLot(text) {
   save(); renderBar();
   if (lotOpen) renderLot();
 }
-journal = createJournal({ h, toast, showOverlay, closeOverlay, deliver, copyText, addToLot });
+journal = createJournal({ h, toast, showOverlay, closeOverlay, deliver, copyText, addToLot, onChange: () => { if (jsync) jsync.touch(); }, syncOn: () => !!syncCfg });
 
 // ---- Wiring ----
 const goto = (key) => { view = key; monthCur = monthOf(key); closeOverlay(); render(); if (mode === 'plan') scrollToDefault(); };
@@ -1234,7 +1251,7 @@ addEventListener('resize', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   if (!dragging()) { if (!overlay) render(); checkLongTimer(); }
-  if (syncer) syncer.run();
+  syncAll();
 });
 
 // iOS: after the keyboard closes, a Home Screen app can stay shifted up under the status bar

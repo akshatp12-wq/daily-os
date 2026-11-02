@@ -473,12 +473,12 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     const { c, p, errs } = await open(1180, 820);
     const jt = () => p.evaluate(() => JSON.parse(localStorage.getItem('dailyos.journal')));
     await p.click('#bar .tab[data-mode="journal"]');
-    ok('journal: third tab opens beside Planner and Dashboard', (await p.$$eval('#bar .tab', (els) => els.map((e) => e.textContent))).join('|') === 'Planner|Dashboard|To Myself');
+    ok('journal: third tab opens beside Planner and Dashboard', (await p.$$eval('#bar .tab', (els) => els.map((e) => e.textContent))).join('|') === 'Planner|Dashboard|Journal');
     ok('journal: replaces the right side, rail stays', (await box(p, '#journal')).vis && !(await box(p, '#planner')).vis && !(await box(p, '#dash')).vis && (await box(p, '#rail')).vis);
     ok('journal: planner-only buttons hidden', !(await box(p, '#lotBtn')).vis && !(await box(p, '#gapChip')).vis && (await box(p, '#bar')).h === 44);
     ok('journal: capture bar sits at the top', (await box(p, '#jIn')).y < 80 && (await box(p, '.jsave')).h >= 44);
     const labels = await p.$$eval('.jsec .jq .jl', (els) => els.map((e) => e.firstChild.textContent));
-    ok('journal: morning questions, then evening in order', labels.join('|') === 'Today may test me with|Mine to control|One thing that matters|Went well|Next time|Letting go', labels.join('|'));
+    ok('journal: morning questions, then evening in order', labels.join('|') === 'Today may test me with|Mine to control|One thing that matters|How will you bring Swami in today?|Went well|Next time|Letting go|How did you remember Swami today?', labels.join('|'));
     ok('journal: only the one thing is required', (await p.$$eval('.jsec .jq em', (els) => els.map((e) => e.textContent))).join('|') === ' · optional| · optional');
     // capture in two taps: field + Save
     await p.click('#jIn'); await p.keyboard.type('call mom #task');
@@ -528,7 +528,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await p.click('.jlink');
     let [dl] = await Promise.all([p.waitForEvent('download'), p.click('.pop >> text=Export Markdown')]);
     const md = fs.readFileSync(await dl.path(), 'utf8');
-    ok('journal: Markdown export', md.includes('# To Myself') && md.includes('- One thing that matters: Send the model') && md.includes('> You did enough today.'), md.slice(0, 80));
+    ok('journal: Markdown export', md.includes('# Journal') && md.includes('- One thing that matters: Send the model') && md.includes('> You did enough today.'), md.slice(0, 80));
     [dl] = await Promise.all([p.waitForEvent('download'), p.click('.pop >> text=Export JSON')]);
     const exported = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
     ok('journal: JSON export', exported.v === 1 && exported.frags.length === 2);
@@ -553,7 +553,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await p.screenshot({ path: path.join(SHOTS, '19-journal-welcome.png') });
     await p.fill('.jfield[data-f="m3"]', 'One email to the lender');
     await p.click('.jwelcome .jbtn');
-    ok('journal: then the normal page', (await p.$$('.jbody .jfield')).length === 6);
+    ok('journal: then the normal page', (await p.$$('.jbody .jfield')).length === 8);
     const rr = await p.evaluate(() => { const q = document.querySelector('.jreread'), m = document.querySelector('.jfield[data-f="m3"]'); return q && [q.textContent, q.getBoundingClientRect().top < m.getBoundingClientRect().top]; });
     ok('journal: a past lesson to reread, above the one thing', !!rr && rr[0].includes('You can start before you feel ready.') && rr[1]);
     ok('journal: welcome-back has no console errors', errs.length === 0, errs.join(' | '));
@@ -663,6 +663,19 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await esc(P);
     await P.waitForTimeout(4500);
     ok('sync: applies it once the editor closes', (await st(P)).lot.some((x) => x.id === 'w2'));
+    // the journal syncs too, as journal.json in the same repo
+    await Q.click('#bar .tab[data-mode="journal"]');
+    await Q.fill('#jIn', 'remembered Swami at lunch #win'); await Q.press('#jIn', 'Enter');
+    await Q.fill('.jfield[data-f="swamiPm"]', 'Paused before the call'); await Q.click('.jdate');
+    await Q.waitForTimeout(2600);
+    const jj = GH.read('journal.json');
+    ok('journal sync: saves to journal.json in the same repo', !!jj && jj.frags.some((f) => f.text === 'remembered Swami at lunch') && Object.values(jj.days).some((d) => d.swamiPm === 'Paused before the call'));
+    ok('journal sync: the footer says it syncs', /Syncs with your other devices/.test(await Q.$eval('.jfoot p', (e) => e.textContent)));
+    await P.click('#bar .tab[data-mode="journal"]');
+    await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await P.waitForTimeout(1500);
+    ok('journal sync: the other device gets the entry and the answer', (await P.$$eval('.jfrag .jt', (els) => els.map((e) => e.textContent))).includes('remembered Swami at lunch') && (await P.$eval('.jfield[data-f="swamiPm"]', (e) => e.value)) === 'Paused before the call');
+    await P.click('#bar .tab[data-mode="plan"]'); await Q.click('#bar .tab[data-mode="plan"]');
     // third device with its own data: choose to combine
     const mini = await open(744, 1133, { data: { ...FIXTURE, blocks: [B('own', 'plan', 'self', 'Own block', 900, 930)], lot: [] }, extra });
     const R = mini.p;

@@ -202,7 +202,7 @@ body.dragging #scroller{touch-action:none}
 .dempty{color:var(--muted);padding:24px 4px;text-align:center}
 #tip{position:fixed;z-index:45;pointer-events:none;background:var(--fg);color:var(--bg);font-size:13px;line-height:1.4;padding:8px 10px;border-radius:10px;white-space:pre-line;max-width:260px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
 
-/* ---- To Myself (journal): paper, serif for writing, one calm accent ---- */
+/* ---- Journal: paper, serif for writing, one calm accent ---- */
 :root{--paper:#f8f4ec;--ink:#2a251f;--ink2:#6f665a;--rule:#e4dccd;--jfield:#fffdf8;--jaccent:#4f6d8a;--serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif}
 @media (prefers-color-scheme:dark){:root{--paper:#1b1916;--ink:#e9e3d7;--ink2:#a69d8f;--rule:#35312b;--jfield:#23211d;--jaccent:#8fb0cf}}
 #journal{overflow-y:auto;background:var(--paper);color:var(--ink);-webkit-overflow-scrolling:touch;min-height:0}
@@ -346,7 +346,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
     <div id="bar">
       <button class="tab sel" data-mode="plan" role="tab" aria-selected="true">Planner</button>
       <button class="tab" data-mode="dash" role="tab" aria-selected="false">Dashboard</button>
-      <button class="tab" data-mode="journal" role="tab" aria-selected="false">To Myself</button>
+      <button class="tab" data-mode="journal" role="tab" aria-selected="false">Journal</button>
       <span class="grow"></span>
       <button id="gapChip" hidden></button>
       <button id="lotBtn" aria-pressed="false">Parking lot <span id="lotCount"></span></button>
@@ -369,7 +369,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
       </aside>
     </section>
     <section id="dash" aria-label="Dashboard"></section>
-    <section id="journal" aria-label="To Myself"></section>
+    <section id="journal" aria-label="Journal"></section>
   </main>
 </div>
 <div id="scrim"></div>

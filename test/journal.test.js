@@ -69,11 +69,12 @@ test('tasks out: waiting first, moved last', () => {
 
 test('markdown export and safe import', () => {
   const j = J.freshJournal('2026-10-01');
-  j.days['2026-10-27'] = { m1: 'a long diligence call', m3: 'Send the model', well: 'Stayed calm', note: 'You did enough today.', q: J.BASE_Q };
+  j.days['2026-10-27'] = { m1: 'a long diligence call', m3: 'Send the model', swamiAm: 'Pause before the 9am call', well: 'Stayed calm', swamiPm: 'Said thanks before lunch', note: 'You did enough today.', q: J.BASE_Q };
   j.frags.push(frag('a', '2026-10-27', 'felt the urge to scroll', ['trigger'], 15));
   const md = J.toMarkdown(j);
-  for (const s of ['# To Myself', '## Tuesday, October 27, 2026', '**Morning**', '- Today may test me with: a long diligence call', '- One thing that matters: Send the model',
-    '**Through the day**', '**Evening**', '- Went well: Stayed calm', '> You did enough today.']) assert.ok(md.includes(s), s);
+  for (const s of ['# Journal', '## Tuesday, October 27, 2026', '**Morning**', '- Today may test me with: a long diligence call', '- One thing that matters: Send the model',
+    '- How will you bring Swami in today: Pause before the 9am call', '**Through the day**', '**Evening**', '- Went well: Stayed calm',
+    '- How did you remember Swami today: Said thanks before lunch', '> You did enough today.']) assert.ok(md.includes(s), s);
   assert.match(md, /- 3:00 PM — felt the urge to scroll {2}#trigger/);
   assert.ok(!md.includes('Mine to control'), 'unanswered questions left out');
   // import: adds, fills gaps, never overwrites
@@ -90,4 +91,32 @@ test('markdown export and safe import', () => {
   assert.equal(r.data.start, '2026-09-15');
   assert.equal(J.validJournal({ v: 1, days: [], frags: [] }), false);
   assert.equal(J.validJournal({ v: 2, days: {}, frags: [] }), false);
+});
+
+test('Swami prompts count as journaling', () => {
+  const j = J.freshJournal('2026-10-01');
+  j.days['2026-10-28'] = { swamiPm: 'Remembered at arti' };
+  assert.equal(J.dayActive(j, '2026-10-28'), true);
+  assert.equal(J.SWAMI_AM, 'How will you bring Swami in today?');
+  assert.equal(J.SWAMI_PM, 'How did you remember Swami today?');
+});
+
+test('journal three-way merge for sync', () => {
+  const base = { v: 1, start: '2026-10-01', days: { '2026-10-27': { m3: 'Send the model', well: 'calm' } }, frags: [frag('a', '2026-10-27', 'one'), frag('b', '2026-10-27', 'two')] };
+  const local = JSON.parse(JSON.stringify(base)), remote = JSON.parse(JSON.stringify(base));
+  local.days['2026-10-27'].next = 'start earlier';               // iPad adds an answer
+  remote.days['2026-10-27'].swamiPm = 'at arti';                   // phone adds another
+  remote.days['2026-10-27'].well = 'very calm';                    // phone edits one
+  local.frags = local.frags.filter((f) => f.id !== 'a');           // iPad removes a line
+  remote.frags.push(frag('c', '2026-10-28', 'from phone', ['idea']));
+  remote.start = '2026-09-20';
+  const m = J.mergeJournal3(base, local, remote);
+  assert.deepEqual(m.days['2026-10-27'], { m3: 'Send the model', swamiPm: 'at arti', well: 'very calm', next: 'start earlier' });
+  assert.deepEqual(m.frags.map((f) => f.id).sort(), ['b', 'c']);
+  assert.equal(m.start, '2026-09-20');
+  assert.equal(J.validJournal(m), true);
+  // no base yet: union
+  const u = J.mergeJournal3(null, local, remote);
+  assert.deepEqual(u.frags.map((f) => f.id).sort(), ['a', 'b', 'c']);
+  assert.deepEqual(J.mergeJournal3(null, local, null).frags.map((f) => f.id), ['b']);
 });

@@ -74,7 +74,7 @@ function plan(meta, blocks, nowMs, cfg = NOTIFY) {
     const [hh, mm] = cfg.evening.split(':').map(Number), d = new Date(nowMs);
     let at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm).getTime();
     if (at <= nowMs) at = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, hh, mm).getTime();
-    add(`evening:${dateKey(new Date(at))}`, at, 'A line for To Myself?', 'One line is a whole day.');
+    add(`evening:${dateKey(new Date(at))}`, at, 'A line for your journal?', 'One line is a whole day.');
   }
   return out.sort((a, b) => a.at - b.at).slice(0, 40);
 }

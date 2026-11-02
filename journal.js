@@ -1,6 +1,7 @@
-// To Myself — a daily Stoic journal inside Daily OS, after Marcus Aurelius's notes to himself.
-// Lives only on this device (its own storage key, never synced). Export/Import keep it safe.
+// Journal — a daily Stoic journal inside Daily OS, after Marcus Aurelius's notes to himself.
+// Its own storage key; syncs as journal.json in the private repo when sync is on. Export/Import too.
 import * as L from './logic.js';
+import { pick3, mergeById } from './sync.js';
 
 export const JKEY = 'dailyos.journal';
 export const TAGS = [
@@ -38,7 +39,9 @@ export function questionsFor(j, key) {
 }
 
 // ---- Days ----
-export const FIELDS = ['m1', 'm2', 'm3', 'well', 'next', 'letgo', 'note'];
+export const FIELDS = ['m1', 'm2', 'm3', 'swamiAm', 'well', 'next', 'letgo', 'swamiPm', 'note'];
+export const SWAMI_AM = 'How will you bring Swami in today?';
+export const SWAMI_PM = 'How did you remember Swami today?';
 const filled = (v) => typeof v === 'string' && !!v.trim();
 export const dayActive = (j, key) => FIELDS.some((f) => filled(j.days[key] && j.days[key][f])) || j.frags.some((f) => f.day === key);
 // After 2+ empty days, today opens with "Welcome back" and only the one-thing question.
@@ -87,15 +90,15 @@ const longDate = (key) => { const [y, m, d] = L.parseKey(key); return new Date(y
 const clock = (ms) => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/ /g, ' ');
 export function toMarkdown(j) {
   const keys = [...new Set([...Object.keys(j.days), ...j.frags.map((f) => f.day)])].filter((k) => dayActive(j, k)).sort();
-  const out = ['# To Myself', ''];
+  const out = ['# Journal', ''];
   for (const k of keys) {
     const d = j.days[k] || {}, q = d.q || questionsFor(j, k), frs = j.frags.filter((f) => f.day === k).sort((a, b) => a.at - b.at);
     out.push(`## ${longDate(k)}`, '');
-    const morning = [['m1', q[0]], ['m2', q[1]], ['m3', q[2]]].filter(([f]) => filled(d[f]));
+    const morning = [['m1', q[0]], ['m2', q[1]], ['m3', q[2]], ['swamiAm', SWAMI_AM]].filter(([f]) => filled(d[f]));
     if (morning.length) out.push('**Morning**', ...morning.map(([f, label]) => `- ${label.replace(/[:?.]$/, '')}: ${d[f].trim()}`), '');
     if (frs.length) out.push('**Through the day**', ...frs.map((f) => `- ${clock(f.at)} — ${f.text}${f.tags.length ? '  ' + f.tags.map((t) => `#${t}`).join(' ') : ''}`), '');
-    const evening = [['well', 'Went well'], ['next', 'Next time'], ['letgo', 'Letting go']].filter(([f]) => filled(d[f]));
-    if (evening.length) out.push('**Evening**', ...evening.map(([f, label]) => `- ${label}: ${d[f].trim()}`), '');
+    const evening = [['well', 'Went well'], ['next', 'Next time'], ['letgo', 'Letting go'], ['swamiPm', SWAMI_PM]].filter(([f]) => filled(d[f]));
+    if (evening.length) out.push('**Evening**', ...evening.map(([f, label]) => `- ${label.replace(/[:?.]$/, '')}: ${d[f].trim()}`), '');
     if (filled(d.note)) out.push(`> ${d.note.trim()}`, '');
   }
   return out.join('\n');
@@ -104,6 +107,21 @@ export function validJournal(d) {
   return !!d && d.v === 1 && !!d.days && typeof d.days === 'object' && !Array.isArray(d.days) && Array.isArray(d.frags) &&
     Object.entries(d.days).every(([k, v]) => DAY_RE.test(k) && !!v && typeof v === 'object') &&
     d.frags.every((f) => !!f && typeof f.id === 'string' && DAY_RE.test(f.day) && typeof f.text === 'string' && Number.isFinite(f.at) && Array.isArray(f.tags));
+}
+// Three-way merge for sync: entries by id, answers field by field.
+export function mergeJournal3(base, local, remote) {
+  const E = { days: {}, frags: [] }, B = base || E, R = remote || E;
+  const days = {};
+  for (const k of new Set([...Object.keys(B.days), ...Object.keys(local.days), ...Object.keys(R.days)])) {
+    const d = {};
+    for (const f of [...FIELDS, 'q']) {
+      const v = pick3(B.days[k] && B.days[k][f], local.days[k] && local.days[k][f], R.days[k] && R.days[k][f]);
+      if (v !== undefined) d[f] = v;
+    }
+    if (Object.keys(d).length) days[k] = d;
+  }
+  const start = [local.start, R.start].filter((s) => DAY_RE.test(s || '')).sort()[0] || local.start;
+  return { v: 1, start, days, frags: mergeById(B.frags, local.frags, R.frags) };
 }
 // Import never overwrites: new entries are added, empty answers get filled.
 export function mergeJournal(mine, theirs) {
@@ -126,7 +144,7 @@ const SR = typeof window !== 'undefined' ? window.SpeechRecognition || window.we
 const MIC = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>';
 
 export function createJournal(ctx) {
-  const { h, toast, showOverlay, closeOverlay, addToLot, deliver, copyText } = ctx;
+  const { h, toast, showOverlay, closeOverlay, addToLot, deliver, copyText, onChange = () => {}, syncOn = () => false } = ctx;
   const root = document.getElementById('journal');
   const today = () => L.dayKeyOf(Date.now());
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -135,7 +153,8 @@ export function createJournal(ctx) {
     try { const d = JSON.parse(localStorage.getItem(JKEY)); if (validJournal(d)) return d; } catch {}
     return freshJournal(today());
   }
-  const save = () => { clearTimeout(saveT); try { localStorage.setItem(JKEY, JSON.stringify(j)); } catch { toast('Couldn’t save just now. Your words are still on screen.'); } };
+  const persist = () => { try { localStorage.setItem(JKEY, JSON.stringify(j)); return true; } catch { toast('Couldn’t save just now. Your words are still on screen.'); return false; } };
+  const save = () => { clearTimeout(saveT); if (persist()) onChange(); };
   const saveSoon = () => { clearTimeout(saveT); saveT = setTimeout(save, 300); };
   const rec_ = (k) => (j.days[k] ||= {});
   const short = (key) => { const [y, m, d] = L.parseKey(key); return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); };
@@ -180,7 +199,8 @@ export function createJournal(ctx) {
 
   const nav = h('div', { class: 'jnav', role: 'tablist' });
   const body = h('div', { class: 'jbody' });
-  const foot = h('div', { class: 'jfoot' }, h('button', { class: 'jlink', onclick: openIO }, 'Export or import'), h('p', {}, 'Your journal stays on this device. It isn’t synced.'));
+  const footNote = h('p', {});
+  const foot = h('div', { class: 'jfoot' }, h('button', { class: 'jlink', onclick: openIO }, 'Export or import'), footNote);
   root.replaceChildren(h('div', { class: 'jtop' }, form, tagRow, nav), body, foot);
 
   // ---- Fields: answers save as you type ----
@@ -222,11 +242,12 @@ export function createJournal(ctx) {
         field(q[0], 'm1', { hint: 'optional' }),
         field(q[1], 'm2', { hint: 'optional' }),
         lesson ? h('blockquote', { class: 'jreread' }, h('span', { class: 'jl' }, 'From your book'), h('p', {}, lesson.text), h('cite', {}, short(lesson.day))) : null,
-        field(q[2], 'm3', { main: true })),
+        field(q[2], 'm3', { main: true }),
+        field(SWAMI_AM, 'swamiAm')),
       section('Through the day', null,
         frs.length ? h('ul', { class: 'jfrags' }, frs.map(fragEl)) : null,
         h('p', { class: 'jhint' }, frs.length ? 'That’s a whole day. Anything more is a bonus.' : 'Use the bar above whenever something comes up. One line is a whole day.')),
-      section('Evening', 'about 3 minutes', field('Went well', 'well'), field('Next time', 'next'), field('Letting go', 'letgo')),
+      section('Evening', 'about 3 minutes', field('Went well', 'well'), field('Next time', 'next'), field('Letting go', 'letgo'), field(SWAMI_PM, 'swamiPm')),
       section('Note to self', 'goes into your Book of lessons', note),
     ];
   }
@@ -259,6 +280,7 @@ export function createJournal(ctx) {
   }
 
   function render() {
+    footNote.textContent = syncOn() ? 'Syncs with your other devices through your private repo.' : 'Stays on this device until you turn on sync (Export / Backup).';
     nav.replaceChildren(...[['today', 'Today'], ['book', 'Book of lessons'], ['tasks', 'Tasks out']].map(([id, label]) =>
       h('button', { class: 'jtab' + (view === id ? ' on' : ''), role: 'tab', 'aria-selected': view === id ? 'true' : 'false', 'data-view': id, onclick: () => { view = id; render(); root.scrollTop = 0; } }, label)));
     body.replaceChildren(...(view === 'book' ? renderBook() : view === 'tasks' ? renderTasks() : renderToday()).filter(Boolean));
@@ -307,8 +329,8 @@ export function createJournal(ctx) {
       fileIn.value = '';
       if (!f) return;
       let d;
-      try { d = JSON.parse(await f.text()); } catch { return toast('That file isn’t a To Myself export.'); }
-      if (!validJournal(d)) return toast('That file isn’t a To Myself export.');
+      try { d = JSON.parse(await f.text()); } catch { return toast('That file isn’t a Journal export.'); }
+      if (!validJournal(d)) return toast('That file isn’t a Journal export.');
       const before = j, r = mergeJournal(j, d);
       j = r.data; save(); closeOverlay(); render();
       toast(r.added || r.answers ? `Brought in ${r.added} entr${r.added === 1 ? 'y' : 'ies'} and ${r.answers} answer${r.answers === 1 ? '' : 's'}. Nothing was overwritten.` : 'Everything in that file was already here.',
@@ -316,15 +338,21 @@ export function createJournal(ctx) {
     });
     showOverlay(h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Export or import' },
       h('h3', {}, 'Keep your journal safe'),
-      h('p', { class: 'muted' }, 'Your journal lives only on this device. Export a copy now and then, and save it somewhere you trust.'),
+      h('p', { class: 'muted' }, syncOn() ? 'Your journal syncs through your private repo, and every version is kept there. An export is an extra copy you can keep anywhere.' : 'Your journal lives only on this device until you turn on sync. Export a copy now and then, and save it somewhere you trust.'),
       h('div', { class: 'row' },
-        h('button', { onclick: () => deliver(new File([JSON.stringify(j)], `to-myself-${stamp}.json`, { type: 'application/json' })) }, 'Export JSON'),
-        h('button', { onclick: () => deliver(new File([toMarkdown(j)], `to-myself-${stamp}.md`, { type: 'text/markdown' })) }, 'Export Markdown')),
+        h('button', { onclick: () => deliver(new File([JSON.stringify(j)], `journal-${stamp}.json`, { type: 'application/json' })) }, 'Export JSON'),
+        h('button', { onclick: () => deliver(new File([toMarkdown(j)], `journal-${stamp}.md`, { type: 'text/markdown' })) }, 'Export Markdown')),
       h('button', { onclick: () => fileIn.click() }, 'Import JSON…'),
       h('p', { class: 'muted' }, 'Importing only adds what’s missing. It never overwrites anything here.'),
       fileIn,
       h('button', { class: 'primary', onclick: closeOverlay }, 'Done')), 'jio', null, true);
   }
 
-  return { render, focusCapture: () => input.focus() };
+  // For sync: hold off while you're typing in the journal or editing an entry.
+  const busy = () => root.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  return {
+    render, focusCapture: () => input.focus(), busy,
+    get data() { return j; },
+    replace(next) { j = next; persist(); render(); },
+  };
 }

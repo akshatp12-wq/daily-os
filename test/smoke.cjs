@@ -190,7 +190,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await p.press('#lotIn', 'Enter');
     ok('lot: Enter saves and clears for the next line', (await p.$eval('#lotIn', (e) => e.value === '' && document.activeElement === e)) && (await st(p)).lot.length === 1);
     for (const t of ['#Career update resume 45 min', 'LBO practice 2h', 'email lender']) { await p.fill('#lotIn', t); await p.press('#lotIn', 'Enter'); }
-    const secs = await p.$$eval('#lotList .lsec', (els) => els.map((s) => [s.querySelector('h4 span').textContent, [...s.querySelectorAll('.itxt')].map((x) => x.textContent)]));
+    const secs = await p.$$eval('#lotList .lsec:not(.gshelf)', (els) => els.map((s) => [s.querySelector('h4 span').textContent, [...s.querySelectorAll('.itxt')].map((x) => x.textContent)]));
     ok('lot: sorted into Quick / Medium / Long, shortest first', JSON.stringify(secs) === JSON.stringify([['Quick · 15–30m', ['call franchise', 'email lender']], ['Medium · 45–75m', ['update resume']], ['Long · 90m+', ['LBO practice']]]), JSON.stringify(secs));
     const tagged = await p.$eval('#lotList .item.tagged', (e) => [e.querySelector('.itxt').textContent, e.querySelector('.itag').textContent, e.style.getPropertyValue('--c')]);
     ok('lot: #Career links and colors the task', JSON.stringify(tagged) === JSON.stringify(['update resume', 'Career', '#059669']), JSON.stringify(tagged));
@@ -239,7 +239,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     ok('lot: delete has Undo', (await st(p)).lot.length === 1);
     // quick hits under 15 min batch into one block
     for (const t of ['text Sam 5 min #Life', 'sign form 10 min #Life']) { await p.fill('#lotIn', t); await p.press('#lotIn', 'Enter'); }
-    const qh = await p.$$eval('#lotList .lsec', (els) => els.map((x) => x.querySelector('h4 span').textContent));
+    const qh = await p.$$eval('#lotList .lsec:not(.gshelf)', (els) => els.map((x) => x.querySelector('h4 span').textContent));
     ok('lot: tasks under 15 min collect as Quick hits', qh[0] === 'Quick hits · under 15m' && (await p.$eval('#lotList .item.batch', (e) => e.textContent)) === 'Batch all 2 into one block15m', qh.join('|'));
     ok('lot: small task shows its real length', (await p.$$eval('#lotList .idur', (els) => els.map((e) => e.textContent))).includes('5m'));
     await seeMin(p, 900);
@@ -262,7 +262,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     ok('lot: Move to parking lot keeps title, length, category', !!li && li.min === 75 && li.cat === 'career' && !(await blk(p, 'p3')));
 
     // --- Categories ---
-    await p.click('#timers .thead button');
+    await p.click('#timers .thead button:text-is("Edit")');
     ok('categories: Edit opens the editor', (await p.$$('.pop[aria-label="Categories"] .crow-e')).length === 5);
     await p.screenshot({ path: path.join(SHOTS, '04-categories.png') });
     await p.click('.pop >> text=+ Add category');
@@ -473,7 +473,7 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     const { c, p, errs } = await open(1180, 820);
     const jt = () => p.evaluate(() => JSON.parse(localStorage.getItem('dailyos.journal')));
     await p.click('#bar .tab[data-mode="journal"]');
-    ok('journal: third tab opens beside Planner and Dashboard', (await p.$$eval('#bar .tab', (els) => els.map((e) => e.textContent))).join('|') === 'Planner|Dashboard|Journal');
+    ok('journal: third tab opens beside Planner and Dashboard', (await p.$$eval('#bar .tab', (els) => els.map((e) => e.textContent))).join('|') === 'Planner|Dashboard|Journal|Goals');
     ok('journal: replaces the right side, rail stays', (await box(p, '#journal')).vis && !(await box(p, '#planner')).vis && !(await box(p, '#dash')).vis && (await box(p, '#rail')).vis);
     ok('journal: planner-only buttons hidden', !(await box(p, '#lotBtn')).vis && !(await box(p, '#gapChip')).vis && (await box(p, '#bar')).h === 44);
     ok('journal: capture bar sits at the top', (await box(p, '#jIn')).y < 80 && (await box(p, '.jsave')).h >= 44);
@@ -564,6 +564,130 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await p.click('#bar .tab[data-mode="journal"]');
     await p.screenshot({ path: path.join(SHOTS, shot) });
     ok(`journal ${dark ? 'dark' : 'phone'}: renders cleanly`, (await box(p, '#jIn')).vis && errs.length === 0, errs.join(' | '));
+    await c.close();
+  }
+
+  // ======================= Goals =======================
+  {
+    const GF = { ...FIXTURE, blocks: [...FIXTURE.blocks, B('g1', 'actual', 'career', 'Pitch work', 360, 480)] };
+    const { c, p, errs } = await open(1180, 820, { data: GF });
+    const gd = () => p.evaluate(() => JSON.parse(localStorage.getItem('dailyos.goals')));
+    const card = (id) => `#goals [data-goal="${id}"]`;
+    ok('goals: rail shows this week’s goal time', (await p.$eval('#goalLink', (e) => e.textContent)) === 'Goals 2h / 8h', await p.$eval('#goalLink', (e) => e.textContent).catch(() => 'none'));
+    const last = await p.evaluate(() => Math.round([...document.querySelectorAll('#timers .tbtn')].at(-1).getBoundingClientRect().bottom));
+    ok('goals: rail still fits all 5 timers', last <= 820, last);
+    await p.click('#goalLink');
+    ok('goals: fourth tab opens from the rail link', (await p.$eval('#bar .tab.sel', (e) => e.textContent)) === 'Goals' && (await box(p, '#goals')).vis && !(await box(p, '#planner')).vis && (await box(p, '#rail')).vis);
+    ok('goals: planner-only buttons hidden', !(await box(p, '#lotBtn')).vis && !(await box(p, '#gapChip')).vis && (await box(p, '#bar')).h === 44);
+    ok('goals: starter goals, someday ones tucked away', (await p.$$eval('#goals .gcard h3', (els) => els.map((e) => e.textContent))).join('|') === 'Hedge fund program|Chicago Marathon|Satsang' && /\(2\)/.test(await p.$eval('.gsome > button', (e) => e.textContent)));
+    const rw = await p.$$eval('.gcardr', (els) => els.map((e) => e.querySelector('.v').textContent));
+    ok('goals: week / month / quarter targets', rw.join('|') === '2h / 8h|2h / 30h|2h / 90h', rw.join('|'));
+    ok('goals: logged Actual time counts toward its goal by words', (await p.$eval(`${card('hf')} .gweek b`, (e) => e.textContent)) === '2h / 4h');
+    ok('goals: marathon counts down to race day in its phase', (await p.$eval(`${card('marathon')} .gchip`, (e) => e.textContent)) === 'Base · 50 weeks to go');
+    ok('goals: free time starts from what you earned minus Drift', (await p.$eval('#gFree', (e) => e.textContent)) === '0m', await p.$eval('#gFree', (e) => e.textContent));
+    await p.screenshot({ path: path.join(SHOTS, '22-goals.png') });
+    // check-in
+    await p.click(`${card('satsang')} .gpbtn[data-practice="sat-p1"]`);
+    ok('goals: one-tap check-in counts its minutes', (await gd()).checks.length === 1 && (await p.$eval(`${card('satsang')} .gweek b`, (e) => e.textContent)) === '20m / 2h 30m' && (await p.$eval(`${card('satsang')} .gpbtn[data-practice="sat-p1"]`, (e) => e.getAttribute('aria-pressed'))) === 'true');
+    // next step: done -> asks for the next one
+    await p.click(`${card('hf')} .gstep button.primary`);
+    ok('goals: finishing a step earns a bonus', /\+30m free time/.test(await toastText(p)) && (await gd()).goals[0].steps[0].done === true);
+    await p.waitForTimeout(100);
+    ok('goals: then asks for the next small step', await p.evaluate(() => document.activeElement && document.activeElement.closest('[data-goal="hf"] .gstep') !== null));
+    await p.keyboard.type('Screen industrials for a short idea');
+    await p.keyboard.press('Enter');
+    ok('goals: next step saved', (await p.$eval(`${card('hf')} .gstep p`, (e) => e.textContent)) === 'Screen industrials for a short idea');
+    ok('goals: free time = 15m per goal hour + step bonus − Drift', (await p.$eval('#gFree', (e) => e.textContent)) === '35m', await p.$eval('#gFree', (e) => e.textContent));
+    await p.click(`${card('marathon')} .gstep button:text-is("To Parking lot")`);
+    const li = (await st(p)).lot.find((x) => x.text === 'Look up the 2027 entry options and dates');
+    ok('goals: a step goes to the Parking lot linked to its goal', !!li && li.goal === 'marathon' && li.cat === 'self');
+    // deal week + claim
+    await p.click('.gmode button[data-mode="deal"]');
+    ok('goals: a deal week lowers the bar', (await p.$eval('.gcardr[data-period="week"] .v', (e) => e.textContent)) === '2h 20m / 2h' && (await p.$eval('.gcardr[data-period="month"] .v', (e) => e.textContent)) === '2h 20m / 24h');
+    await p.click('.gcardr[data-period="week"] button.primary');
+    ok('goals: claim offers your reward menu', (await p.$$eval('.pop .gmenu button', (els) => els.map((e) => e.textContent))).join('|') === 'Dinner somewhere good|A new book|Movie night, no laptop');
+    await p.screenshot({ path: path.join(SHOTS, '23-goals-claim.png') });
+    await p.click('.pop .gmenu button >> nth=0');
+    ok('goals: reward claimed for this week', (await gd()).claims[0].text === 'Dinner somewhere good' && (await gd()).claims[0].key === '2026-10-25' && /Dinner somewhere good/.test(await p.$eval('.gcardr[data-period="week"]', (e) => e.textContent)));
+    // edit
+    await p.click(`${card('hf')} .gaddwhy`);
+    await p.fill('.pop.gedit textarea[aria-label="Why it matters"]', 'I want to think about businesses for a living.');
+    await p.screenshot({ path: path.join(SHOTS, '24-goals-edit.png') });
+    await p.click('.pop.gedit button:text-is("Save")');
+    ok('goals: edit saves the why', (await p.$eval(`${card('hf')} .gwhy`, (e) => e.textContent)) === 'I want to think about businesses for a living.');
+    // new goal from a template
+    await p.click('#goals button:text-is("+ New goal")');
+    ok('goals: four templates', (await p.$$eval('.pop .gtpl b', (els) => els.map((e) => e.textContent))).join('|') === 'Event|Practice|Project|Skill');
+    await p.click('.pop .gtpl[data-shape="mastery"]');
+    await p.fill('.pop.gedit input[aria-label="Goal name"]', 'Spanish');
+    await p.click('.pop.gedit .chip[data-cat="self"]');
+    await p.click('.pop.gedit button:text-is("Save")');
+    const sp = (await gd()).goals.find((g) => g.name === 'Spanish');
+    ok('goals: new goal from a template', !!sp && sp.shape === 'mastery' && sp.cats.join() === 'self' && sp.sessions.length === 1 && (await p.$$('#goals .gcard')).length === 4);
+    // pause
+    await p.click(`${card('marathon')} footer button:text-is("Pause")`);
+    ok('goals: pause moves it aside, with Undo', (await p.$$('#goals .gcard')).length === 3 && (await toastText(p)).startsWith('Paused.'));
+    await p.click('#toast button');
+    ok('goals: undo pause', (await p.$$('#goals .gcard')).length === 4);
+    // settings
+    await p.click('#goals button:text-is("Reward settings")');
+    await p.fill('.pop.gedit textarea[aria-label="Wishlist"]', 'Running watch 1h\nWeekend trip 120h');
+    await p.click('.pop.gedit button:text-is("Save")');
+    ok('goals: wishlist priced in hours', (await gd()).wish.map((w) => `${w.name}:${w.hours}`).join('|') === 'Running watch:1|Weekend trip:120');
+    await p.click('.gwrow button.primary');
+    ok('goals: buy a wishlist item with hours from the jar', !!(await gd()).wish.find((w) => w.name === 'Running watch').bought && /Earned so far: Running watch/.test(await p.$eval('.gbank', (e) => e.textContent)));
+    const txt = await p.$eval('#goals', (e) => e.textContent);
+    ok('goals: no streaks or guilt copy', !/streak|missed|behind|overdue|you should|failed/i.test(txt));
+    ok('goals: no stray text', !/null|undefined|NaN/.test(txt));
+    // Parking lot shelf
+    await p.click('#bar .tab[data-mode="plan"]');
+    await p.click('#lotBtn');
+    const shelf = await p.$$eval('#lotList .gshelf .itxt', (els) => els.map((e) => e.textContent));
+    ok('goals: Parking lot shelf of goal sessions', shelf.slice(0, 3).join('|') === 'Pitch work|Build the model|Coffee chat' && shelf.includes('Long run') && shelf.includes('Practice session'), shelf.join('|'));
+    await seeMin(p, 840);
+    const shelfXY = await p.$eval('#lotList .gshelf .item', (e) => { const r = e.getBoundingClientRect(); return { x: r.left + 30, y: r.top + r.height / 2 }; });
+    const lot0 = (await st(p)).lot.length;
+    await mouseDrag(p, shelfXY, await slotXY(p, 'plan', 840), 12);
+    const sb = (await st(p)).blocks.find((b) => b.layer === 'plan' && b.start === 840);
+    ok('goals: a session drags onto the Plan, linked, no prompt', !!sb && sb.title === 'Pitch work' && sb.goal === 'hf' && sb.cat === 'career' && sb.end === 930 && (await p.$$('.pop')).length === 0);
+    ok('goals: sessions stay on the shelf', (await st(p)).lot.length === lot0 && (await p.$$('#lotList .gshelf .item')).length === shelf.length);
+    await p.click('#toast button');
+    ok('goals: undo doesn’t dump the session into the lot', (await st(p)).lot.length === lot0 && !(await st(p)).blocks.some((b) => b.id === sb.id));
+    await p.click('#lotClose');
+    // popover: Counts toward
+    await seeMin(p, 180);
+    await p.click('#grid [data-id="p1"] .bt');
+    ok('goals: block popover offers Counts toward', (await p.$$eval('.pop .gtoward .chip', (els) => els.map((e) => e.textContent))).join('|') === 'Hedge fund program|Chicago Marathon|Satsang|Spanish|None' && (await p.$$('.pop .gtoward .chip.sel')).length === 0);
+    await p.click('.pop .gtoward .chip[data-goal="hf"]');
+    ok('goals: link a block to a goal', (await blk(p, 'p1')).goal === 'hf' && (await p.$$('.pop .gtoward .chip.sel[data-goal="hf"]')).length === 1);
+    await p.screenshot({ path: path.join(SHOTS, '25-goals-popover.png') });
+    await esc(p);
+    await seeMin(p, 360);
+    await p.click('#grid [data-id="g1"] .bt');
+    ok('goals: auto-matched block shows its goal', (await p.$$('.pop .gtoward .chip.sel[data-goal="hf"]')).length === 1);
+    await p.click('.pop .gtoward .chip[data-goal=""]');
+    ok('goals: “None” stops a block counting', (await blk(p, 'g1')).goal === '' && /Goals 20m/.test(await p.$eval('#goalLink', (e) => e.textContent)), await p.$eval('#goalLink', (e) => e.textContent));
+    await esc(p);
+    // Drift timer shows earned time left
+    await p.click('#timers .tbtn[data-cat="drift"]');
+    ok('goals: a Drift timer shows earned free time left', /earned left$/.test(await p.$eval('#timers .tbtn[data-cat="drift"] .ts', (e) => e.textContent)), await p.$eval('#timers .tbtn[data-cat="drift"] .ts', (e) => e.textContent));
+    await p.click('#timers .tbtn[data-cat="drift"]');
+    // journal: next steps as the one thing; what counted today
+    await p.click('#bar .tab[data-mode="journal"]');
+    const jc = await p.$$eval('.jgoals .jchip', (els) => els.map((e) => e.textContent));
+    ok('goals → journal: next steps offered for the one thing', jc[0] === 'Screen industrials for a short idea' && jc.length === 3, jc.join('|'));
+    await p.click('.jgoals .jchip >> nth=0');
+    ok('goals → journal: tap one to make it today’s one thing', (await p.$eval('.jfield[data-f="m3"]', (e) => e.value)) === 'Screen industrials for a short idea' && JSON.parse(await p.evaluate(() => localStorage.getItem('dailyos.journal'))).days[DAY].m3 === 'Screen industrials for a short idea');
+    ok('goals → journal: evening shows what counted today', /Today counted toward .*Satsang 20m/.test(await p.$eval('.jcounted', (e) => e.textContent).catch(() => '')));
+    ok('goals: no console errors', errs.length === 0, errs.join(' | '));
+    await c.close();
+  }
+  for (const [w, hh, dark, shot, mobile] of [[1180, 820, true, '26-goals-dark.png', false], [390, 844, false, '27-goals-phone.png', true], [744, 1133, false, '28-goals-mini.png', false]]) {
+    const { c, p, errs } = await open(w, hh, { dark, mobile, data: { ...FIXTURE, blocks: [...FIXTURE.blocks, B('g1', 'actual', 'career', 'Pitch work', 360, 480)] } });
+    await p.click('#bar .tab[data-mode="goals"]');
+    await p.screenshot({ path: path.join(SHOTS, shot) });
+    const over = await p.evaluate(() => document.querySelector('#goals').scrollWidth > document.querySelector('#goals').clientWidth);
+    ok(`goals ${w}px${dark ? ' dark' : ''}: renders cleanly, no sideways scroll`, (await p.$$('#goals .gcard')).length === 3 && !over && errs.length === 0, errs.join(' | '));
     await c.close();
   }
 
@@ -675,6 +799,17 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await P.waitForTimeout(1500);
     ok('journal sync: the other device gets the entry and the answer', (await P.$$eval('.jfrag .jt', (els) => els.map((e) => e.textContent))).includes('remembered Swami at lunch') && (await P.$eval('.jfield[data-f="swamiPm"]', (e) => e.value)) === 'Paused before the call');
+    // goals sync too, as goals.json
+    await Q.click('#bar .tab[data-mode="goals"]');
+    await Q.click('[data-goal="satsang"] .gpbtn[data-practice="sat-p1"]');
+    await Q.waitForTimeout(2600);
+    const gj = GH.read('goals.json');
+    ok('goals sync: saves to goals.json in the same repo', !!gj && gj.checks.length === 1 && gj.goals.length === 5);
+    await P.click('#bar .tab[data-mode="goals"]');
+    await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await P.waitForTimeout(1500);
+    ok('goals sync: the other device gets the check-in', (await P.$eval('[data-goal="satsang"] .gpbtn[data-practice="sat-p1"]', (e) => e.getAttribute('aria-pressed'))) === 'true');
+    ok('goals sync: starter goals aren’t duplicated', JSON.parse(await P.evaluate(() => localStorage.getItem('dailyos.goals'))).goals.length === 5);
     await P.click('#bar .tab[data-mode="plan"]'); await Q.click('#bar .tab[data-mode="plan"]');
     // third device with its own data: choose to combine
     const mini = await open(744, 1133, { data: { ...FIXTURE, blocks: [B('own', 'plan', 'self', 'Own block', 900, 930)], lot: [] }, extra });

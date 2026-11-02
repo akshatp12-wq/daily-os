@@ -2,6 +2,7 @@ import * as L from './logic.js';
 import { weekBars, spark } from './charts.js';
 import * as S from './sync.js';
 import { createJournal, mergeJournal3, validJournal } from './journal.js';
+import { createGoals, mergeGoals3, validGoals } from './goals.js';
 
 const SLOT_PX = 28, KEY = 'dailyos', HOLD = 250;
 const $ = (s) => document.querySelector(s);
@@ -28,7 +29,7 @@ function h(tag, props = {}, ...kids) {
 
 // ---- State ----
 const fresh = () => ({ v: 2, cats: L.DEFAULT_CATS.map((c) => ({ ...c })), blocks: [], timer: null, lastCat: 'work', lot: [], gapSkip: [] });
-let state = load(), saveWarned = false, journal = null;
+let state = load(), saveWarned = false, journal = null, goals = null;
 function load() {
   let raw;
   try { raw = localStorage.getItem(KEY); } catch { return fresh(); }
@@ -114,6 +115,7 @@ function render() {
   renderBar();
   if (mode === 'plan') { renderGrid(); if (lotOpen && !lotDrag) renderLot(); }
   else if (mode === 'dash') renderDash();
+  else if (mode === 'goals') { if (goals) goals.render(); }
   else if (journal) journal.render();
   tick();
 }
@@ -135,14 +137,27 @@ function renderRail() {
   renderMonth();
 }
 
+// A running timer in the "fun" category shows how much earned free time is left.
+let funBase = null;
+function runText(now) {
+  const t = state.timer;
+  let s = '● ' + fmtDur(now - t.startedAt);
+  if (funBase != null) s += ` · ${fmtH(Math.max(0, funBase - (now - t.startedAt) / 60000))} earned left`;
+  return s;
+}
 function renderTimers() {
+  funBase = null;
+  if (goals && state.timer && goals.funCat() === state.timer.cat) funBase = goals.freeLeft(false);
+  const gl = goals && goals.weekLine();
   $('#timers').replaceChildren(
-    h('div', { class: 'thead' }, 'Timers', h('button', { class: 'link', onclick: openCats }, 'Edit')),
+    h('div', { class: 'thead' }, 'Timers',
+      gl ? h('button', { class: 'link glink', id: 'goalLink', onclick: () => setMode('goals'), 'aria-label': `Goals this week: ${fmtH(gl.done)} of ${fmtH(gl.target)}` }, `Goals ${fmtH(gl.done)} / ${fmtH(gl.target)}`) : null,
+      h('button', { class: 'link', onclick: openCats }, 'Edit')),
     ...state.cats.map((c) => {
       const on = !!state.timer && state.timer.cat === c.id;
       return h('button', { class: 'tbtn' + (on ? ' on' : ''), style: `--c:${c.color}`, 'data-cat': c.id, 'aria-pressed': on ? 'true' : 'false', onclick: () => toggleTimer(c.id) },
         h('span', { class: 'tn' }, h('span', { class: 'dot' }), c.name),
-        h('span', { class: 'ts' }, on ? '● ' + fmtDur(Date.now() - state.timer.startedAt) : `${fmtH(mins(view, 'actual', c.id))} / ${fmtH(mins(view, 'plan', c.id))} plan`));
+        h('span', { class: 'ts' }, on ? runText(Date.now()) : `${fmtH(mins(view, 'actual', c.id))} / ${fmtH(mins(view, 'plan', c.id))} plan`));
     }),
     h('button', { class: 'tedit', onclick: openCats }, 'Edit'));
 }
@@ -197,7 +212,7 @@ function tick() {
   const t = state.timer;
   if (!t) return;
   const ts = document.querySelector(`#timers [data-cat="${CSS.escape(t.cat)}"] .ts`);
-  if (ts) ts.textContent = '● ' + fmtDur(now - t.startedAt);
+  if (ts) ts.textContent = runText(now);
   const run = document.getElementById('run');
   if (run) run.style.height = Math.max(6, yOf(view, Math.min(now, L.dayEnd(view))) - yOf(view, t.startedAt)) + 'px';
 }
@@ -287,7 +302,7 @@ function openPop(b, { ask = false } = {}) {
   const chips = state.cats.map((c) => catChip(c, false, () => {
     if (!b.title.trim() || b.title === catOf(b.cat).name) { b.title = c.name; input.value = c.name; }
     b.cat = c.id; state.lastCat = c.id; save(); render();
-    if (ask) closeOverlay(); else sync();
+    if (ask) closeOverlay(); else { sync(); syncGoal(); }
   }));
   const sync = () => {
     startV.textContent = fmtT(b.day, b.start);
@@ -301,13 +316,19 @@ function openPop(b, { ask = false } = {}) {
     if (L.overlaps(state.blocks, nb)) return toast('Overlaps another block');
     b[field] = nb[field]; save(); render(); sync();
   };
+  // Counts toward: link the block to a goal (or to none). Unlinked blocks are matched by their words.
+  const gs = goals ? goals.active() : [];
+  const gChips = gs.length || (b.goal && goals) ? [...gs, null].map((g) => h('button', { class: 'chip gchipb', 'data-goal': g ? g.id : '', style: g ? `--c:${goals.colorOf(g)}` : null, onclick: () => { b.goal = g ? g.id : ''; save(); render(); syncGoal(); } }, g ? g.name : 'None')) : [];
+  const syncGoal = () => { const cur = goals ? goals.goalOf(b) : null; gChips.forEach((ch) => ch.classList.toggle('sel', (ch.dataset.goal || null) === cur && (cur != null || b.goal === ''))); };
   const el = h('div', { class: 'pop', role: 'dialog', 'aria-label': 'Edit block' },
     input, b.note ? h('p', { class: 'muted note' }, b.note) : null, ask ? h('p', { class: 'ask' }, 'Which category?') : null, h('div', { class: 'chips' }, chips),
+    gChips.length ? h('div', { class: 'gtoward' }, h('span', { class: 'lab' }, 'Counts toward'), h('div', { class: 'chips' }, gChips)) : null,
     stepRow('Start', startV, () => shift('start', -L.STEP), () => shift('start', L.STEP)),
     stepRow('End', endV, () => shift('end', -L.STEP), () => shift('end', L.STEP)),
     b.layer === 'plan' ? h('button', { onclick: () => toLot(b) }, 'Move to parking lot') : null,
     h('div', { class: 'row' }, h('button', { class: 'danger', onclick: () => del(b) }, 'Delete'), h('button', { class: 'primary', onclick: closeOverlay }, 'Done')));
-  sync();
+  sync(); syncGoal();
+  input.addEventListener('change', syncGoal);
   showOverlay(el, 'pop', `#grid [data-id="${CSS.escape(b.id)}"]`, false, b.id);
   renderGrid();
 }
@@ -464,7 +485,8 @@ function lotMove(e) {
 function lotUp() {
   const { item, moved, start, bad } = lotDrag;
   endLot();
-  if (!moved) return item.batch ? toast('Drag this onto the Plan to schedule all quick hits as one block', '', null, 3500) : openItemPop(item);
+  if (!moved) return item.batch ? toast('Drag this onto the Plan to schedule all quick hits as one block', '', null, 3500)
+    : item.shelf ? toast(`Drag it onto the Plan to schedule a ${item.goalName} session`, '', null, 3500) : openItemPop(item);
   if (start == null) return;
   if (bad) return toast('That slot is taken');
   schedule(item, start);
@@ -483,6 +505,7 @@ function endLot() {
 function schedule(item, start) {
   const max = L.dayMinutes(view), linked = item.cat && hasCat(item.cat);
   const b = { id: uid(), day: view, start, end: Math.min(start + Math.max(L.STEP, item.min), max), layer: 'plan', cat: linked ? item.cat : pickCat(), title: item.text, note: item.note || '', seq: 0 };
+  if (item.goal) b.goal = item.goal;
   if (b.end - b.start < L.STEP || L.overlaps(state.blocks, b)) return toast('That slot is taken');
   const taken = item.batch || [item], ids = new Set(taken.map((x) => x.id));
   state.blocks.push(b);
@@ -491,7 +514,7 @@ function schedule(item, start) {
   if (!linked) openPop(b, { ask: true }); // #tagged items already know their category
   toast(item.batch ? `Scheduled ${taken.length} quick hits as one ${fmtH(b.end - b.start)} block` : `Scheduled ${fmtH(b.end - b.start)} at ${fmtT(view, b.start)}`, 'Undo', () => {
     state.blocks = state.blocks.filter((x) => x.id !== b.id);
-    state.lot.push(...taken);
+    if (!item.shelf) state.lot.push(...taken); // goal sessions stay on their shelf
     closeOverlay(); save(); render();
   }, 5000);
 }
@@ -535,7 +558,14 @@ function stopTimer(endMs) {
   state.timer = null;
   const b = L.timerToBlock(t, endMs, state.blocks, state.cats);
   let msg;
-  if (b) { b.id = uid(); state.blocks.push(b); msg = `Logged ${fmtH(b.end - b.start)} of ${catOf(b.cat).name}`; }
+  if (b) {
+    b.id = uid();
+    // Planned "Long run" (linked to a goal) + a Self timer over it = a logged Long run that counts toward the goal.
+    const p = goals && state.blocks.find((x) => x.layer === 'plan' && x.day === b.day && x.cat === b.cat && x.start < b.end && b.start < x.end && goals.goalOf(x));
+    if (p) { b.goal = goals.goalOf(p); b.title = p.title || b.title; }
+    state.blocks.push(b);
+    msg = `Logged ${fmtH(b.end - b.start)} of ${p ? b.title : catOf(b.cat).name}`;
+  }
   else msg = endMs - t.startedAt < L.STEP * 60000 ? 'Under 15 min, not logged' : 'No free Actual time, not logged';
   save();
   return msg;
@@ -683,9 +713,22 @@ function renderLot() {
     }
     return h('div', { class: 'lsec' }, kids, list.map(itemEl));
   };
+  // Goal sessions: always here, never used up. Drag one onto the Plan and it's linked to its goal.
+  const shelf = () => {
+    const list = goals ? goals.shelf() : [];
+    if (!list.length) return null;
+    return h('div', { class: 'lsec gshelf' }, h('h4', {}, h('span', {}, 'Goal sessions'), h('span', {}, 'drag to plan')), list.map((x) => {
+      const c = x.cat && hasCat(x.cat) ? catOf(x.cat) : null;
+      const el = h('div', { class: 'item shelf' + (c ? ' tagged' : ''), style: c ? `--c:${c.color}` : null, 'data-lid': x.id },
+        h('span', { class: 'itxt' }, x.text), h('span', { class: 'itag' }, x.goalName), h('span', { class: 'idur' }, fmtH(x.min)));
+      el.addEventListener('pointerdown', (e) => onItemDown(e, x, el));
+      return el;
+    }));
+  };
   lotList.replaceChildren(...(state.lot.length
     ? [tiny(), sec('quick', 'Quick · 15–30m'), sec('medium', 'Medium · 45–75m'), sec('long', 'Long · 90m+')].filter(Boolean) // empty sections are skipped
-    : [h('div', { class: 'lempty' }, 'Type a task and press Enter. Add a time like “20 min” and a category like #Career. Long-press a task and drag it onto the Plan to schedule it. Tasks under 15 min collect as Quick hits you can drag as one block.')]));
+    : [h('div', { class: 'lempty' }, 'Type a task and press Enter. Add a time like “20 min” and a category like #Career. Long-press a task and drag it onto the Plan to schedule it. Tasks under 15 min collect as Quick hits you can drag as one block.')]),
+    ...[shelf()].filter(Boolean));
 }
 function itemEl(x) {
   const c = x.cat && hasCat(x.cat) ? catOf(x.cat) : null;
@@ -1017,8 +1060,8 @@ const store = {
   set: (k, v, keep = true) => { try { (keep ? localStorage : sessionStorage).setItem(k, v); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch {} },
 };
-let syncCfg = null, syncer = null, jsync = null, sealedKey = null, sync = { s: 'off', msg: '' };
-const JBASE = KEY + '.journal.base';
+let syncCfg = null, syncer = null, jsync = null, gsync = null, sealedKey = null, sync = { s: 'off', msg: '' };
+const JBASE = KEY + '.journal.base', GBASE = KEY + '.goals.base';
 try { syncCfg = JSON.parse(store.get(SYNC)); } catch {}
 const ua = navigator.userAgent, device = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad' : 'browser';
 const apiBase = () => store.get(KEY + '.syncApi') || S.GH; // test hook
@@ -1040,7 +1083,7 @@ function startSync(cfg, keep = true) {
     getState: () => state,
     applyState: (next) => { state = { ...fresh(), ...next }; persist(); render(); },
     // Don't swap data under an open editor or a drag; sheets that don't edit data are safe.
-    isBusy: () => dragging() || !!(overlay && !['menu', 'month', 'sealed', 'copy', 'setup', 'unlock', 'jitem', 'jio'].includes(overlay.kind)),
+    isBusy: () => dragging() || journal.busy() || goals.busy() || !!(overlay && !['menu', 'month', 'sealed', 'copy', 'setup', 'unlock', 'jitem', 'jio', 'gsheet'].includes(overlay.kind)),
     onStatus: setSync,
     loadBase: () => { try { const b = JSON.parse(localStorage.getItem(BASE)); return b && b.repo === cfg.repo ? b : null; } catch { return null; } },
     saveBase: (b) => { try { localStorage.setItem(BASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
@@ -1055,19 +1098,34 @@ function startSync(cfg, keep = true) {
     onStatus: (s, msg) => { if (s !== 'ok') setSync(s, msg); },
     loadBase: () => { try { const b = JSON.parse(localStorage.getItem(JBASE)); return b && b.repo === cfg.repo ? b : null; } catch { return null; } },
     saveBase: (b) => { try { localStorage.setItem(JBASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
-    merge: mergeJournal3, valid: validJournal,
+    merge: mergeJournal3, valid: validJournal, label: 'Journal',
+  }, device);
+  // Goals too, as goals.json.
+  if (gsync) gsync.stop();
+  gsync = S.fileSync(cfg, 'goals.json', {
+    getState: () => goals.data,
+    applyState: (next) => { goals.replace(next); render(); },
+    isBusy: () => dragging() || goals.busy() || !!(overlay && ['gsheet', 'pop'].includes(overlay.kind)),
+    onStatus: (s, msg) => { if (s !== 'ok') setSync(s, msg); },
+    loadBase: () => { try { const b = JSON.parse(localStorage.getItem(GBASE)); return b && b.repo === cfg.repo ? b : null; } catch { return null; } },
+    saveBase: (b) => { try { localStorage.setItem(GBASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
+    merge: mergeGoals3, valid: validGoals, label: 'Goals',
   }, device);
   setSync('syncing');
   syncer.run();
   jsync.run();
+  gsync.run();
   if (mode === 'journal') journal.render();
+  if (mode === 'goals') goals.render();
 }
 function syncOff() {
   if (syncer) syncer.stop();
   if (jsync) jsync.stop();
-  syncer = null; jsync = null; syncCfg = null;
-  store.del(SYNC); store.del(BASE); store.del(JBASE);
+  if (gsync) gsync.stop();
+  syncer = null; jsync = null; gsync = null; syncCfg = null;
+  store.del(SYNC); store.del(BASE); store.del(JBASE); store.del(GBASE);
   if (mode === 'journal') journal.render();
+  if (mode === 'goals') goals.render();
   setSync('off');
   toast('Sync is off on this device. Your data stays here.');
 }
@@ -1198,7 +1256,7 @@ async function initSync() {
   renderSyncDot();
   if (!syncCfg && sealedKey && !store.get(SKIP) && !overlay) openUnlock();
 }
-const syncAll = () => { if (syncer) syncer.run(); if (jsync) jsync.run(); };
+const syncAll = () => { if (syncer) syncer.run(); if (jsync) jsync.run(); if (gsync) gsync.run(); };
 setInterval(() => { if (!document.hidden) syncAll(); }, 20000);
 addEventListener('online', syncAll);
 // The widget's "Parking lot" button opens …/#lot
@@ -1212,16 +1270,22 @@ function openFromHash() {
 addEventListener('hashchange', openFromHash);
 
 // ---- Journal tab (syncs as journal.json when sync is on) ----
-function addToLot(text) {
+function addToLot(text, { goal, cat } = {}) {
   const p = L.parseTask(text, state.cats);
   const item = { id: uid(), text: (p.text || String(text)).slice(0, 200), min: p.min, at: Date.now() };
   if (!p.timed) item.timed = false;
-  if (p.cat) item.cat = p.cat;
+  if (p.cat) item.cat = p.cat; else if (cat && hasCat(cat)) item.cat = cat;
+  if (goal) item.goal = goal;
   state.lot.push(item);
   save(); renderBar();
   if (lotOpen) renderLot();
 }
-journal = createJournal({ h, toast, showOverlay, closeOverlay, deliver, copyText, addToLot, onChange: () => { if (jsync) jsync.touch(); }, syncOn: () => !!syncCfg });
+journal = createJournal({ h, toast, showOverlay, closeOverlay, deliver, copyText, addToLot, onChange: () => { if (jsync) jsync.touch(); }, syncOn: () => !!syncCfg,
+  goalHints: () => (goals ? goals.hints() : null), fmtH });
+// ---- Goals tab (syncs as goals.json when sync is on) ----
+goals = createGoals({ h, toast, showOverlay, closeOverlay, addToLot, fmtH, planner: () => state, syncOn: () => !!syncCfg,
+  openLot: () => { setMode('plan'); setLot(true); },
+  onChange: () => { if (gsync) gsync.touch(); renderTimers(); } });
 
 // ---- Wiring ----
 const goto = (key) => { view = key; monthCur = monthOf(key); closeOverlay(); render(); if (mode === 'plan') scrollToDefault(); };

@@ -144,7 +144,7 @@ const SR = typeof window !== 'undefined' ? window.SpeechRecognition || window.we
 const MIC = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>';
 
 export function createJournal(ctx) {
-  const { h, toast, showOverlay, closeOverlay, addToLot, deliver, copyText, onChange = () => {}, syncOn = () => false } = ctx;
+  const { h, toast, showOverlay, closeOverlay, addToLot, deliver, copyText, onChange = () => {}, syncOn = () => false, goalHints = () => null, fmtH = (m) => `${m}m` } = ctx;
   const root = document.getElementById('journal');
   const today = () => L.dayKeyOf(Date.now());
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -230,7 +230,14 @@ export function createJournal(ctx) {
         h('button', { class: 'jbtn', onclick: () => { save(); welcomed = true; render(); } }, 'Done'))];
     }
     const frs = j.frags.filter((f) => f.day === t).sort((a, b) => a.at - b.at);
-    const lesson = pastLesson(j, t);
+    const lesson = pastLesson(j, t), gh = goalHints();
+    // Next steps from Goals, one tap to make one of them today's one thing.
+    const stepChips = gh && gh.steps.length ? h('div', { class: 'jgoals' }, h('span', { class: 'jl' }, 'From your goals'), gh.steps.map((s) => h('button', { type: 'button', class: 'jchip', onclick: () => {
+      const ta = body.querySelector('textarea[data-f="m3"]');
+      if (!ta) return;
+      ta.value = s.text; ta.dispatchEvent(new Event('input')); save();
+    } }, s.text))) : null;
+    const counted = gh && gh.counted.length ? h('p', { class: 'jhint jcounted' }, 'Today counted toward ', gh.counted.map((c) => `${c.goal} ${fmtH(c.min)}`).join(' · '), '.') : null;
     const note = h('input', { type: 'text', class: 'jnote', placeholder: 'You…', maxlength: '280', 'aria-label': 'Note to self', value: d.note || '' });
     note.addEventListener('focus', () => { if (!note.value) note.value = 'You '; });
     note.addEventListener('blur', () => { if (note.value.trim() === 'You') { note.value = ''; rec_(t).note = ''; } save(); });
@@ -243,11 +250,12 @@ export function createJournal(ctx) {
         field(q[1], 'm2', { hint: 'optional' }),
         lesson ? h('blockquote', { class: 'jreread' }, h('span', { class: 'jl' }, 'From your book'), h('p', {}, lesson.text), h('cite', {}, short(lesson.day))) : null,
         field(q[2], 'm3', { main: true }),
+        stepChips,
         field(SWAMI_AM, 'swamiAm')),
       section('Through the day', null,
         frs.length ? h('ul', { class: 'jfrags' }, frs.map(fragEl)) : null,
         h('p', { class: 'jhint' }, frs.length ? 'That’s a whole day. Anything more is a bonus.' : 'Use the bar above whenever something comes up. One line is a whole day.')),
-      section('Evening', 'about 3 minutes', field('Went well', 'well'), field('Next time', 'next'), field('Letting go', 'letgo'), field(SWAMI_PM, 'swamiPm')),
+      section('Evening', 'about 3 minutes', counted, field('Went well', 'well'), field('Next time', 'next'), field('Letting go', 'letgo'), field(SWAMI_PM, 'swamiPm')),
       section('Note to self', 'goes into your Book of lessons', note),
     ];
   }

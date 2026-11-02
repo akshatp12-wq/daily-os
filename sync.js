@@ -222,10 +222,10 @@ export function fileSync(cfg, name, hooks, device = 'device') {
     const remote = f ? (base && base.sha === f.sha ? base.data : (await gh.get(name)).data) : null;
     const local = JSON.parse(JSON.stringify(hooks.getState())), start = stable(local);
     const merged = hooks.merge(base && base.data, local, remote);
-    if (!hooks.valid(merged)) throw new SyncError('error', 'Journal data didn’t pass validation; nothing was changed');
+    if (!hooks.valid(merged)) throw new SyncError('error', `${hooks.label || 'Journal'} data didn’t pass validation; nothing was changed`);
     let sha = f ? f.sha : null;
     if (!remote || !same(remote, merged)) {
-      sha = await gh.put(name, merged, sha, `Journal sync from ${device}`);
+      sha = await gh.put(name, merged, sha, `${hooks.label || 'Journal'} sync from ${device}`);
       if (sha == null) return 'conflict';
     }
     if (hooks.isBusy()) return 'busy';
@@ -244,7 +244,7 @@ export function fileSync(cfg, name, hooks, device = 'device') {
     try {
       let r = 'conflict';
       for (let i = 0; i < 4 && r === 'conflict'; i++) r = await once();
-      if (r === 'conflict') throw new SyncError('error', 'Another device kept saving the journal at the same time');
+      if (r === 'conflict') throw new SyncError('error', `Another device kept saving the ${(hooks.label || 'Journal').toLowerCase()} at the same time`);
       if (r === 'busy') later(3000); else hooks.onStatus('ok');
     } catch (e) { hooks.onStatus(e.kind || 'error', e.message); }
     finally { running = false; if (again) { again = false; later(1200); } }

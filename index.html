@@ -101,7 +101,7 @@ button.off{opacity:.45}
 #gapChip{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 12%,var(--panel));font-weight:600;font-size:14px}
 #lotBtn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);font-weight:600}
 #lotCount{font-weight:600;color:var(--muted)}
-#main:not([data-mode="plan"]) #planner,#main:not([data-mode="dash"]) #dash,#main:not([data-mode="journal"]) #journal,#main:not([data-mode="plan"]) #lotBtn,#main[data-mode="journal"] #gapChip{display:none!important}
+#main:not([data-mode="plan"]) #planner,#main:not([data-mode="dash"]) #dash,#main:not([data-mode="journal"]) #journal,#main:not([data-mode="goals"]) #goals,#main:not([data-mode="plan"]) #lotBtn,#main[data-mode="journal"] #gapChip,#main[data-mode="goals"] #gapChip{display:none!important}
 #bar{overflow-x:auto;scrollbar-width:none}#bar::-webkit-scrollbar{display:none}#bar>*{flex-shrink:0}#bar .grow{flex:1 1 0;min-width:0}
 #planner{position:relative;display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;min-width:0}
 .heads{display:grid;grid-template-columns:var(--gut) 1fr 1fr;border-bottom:1px solid var(--line);background:var(--bg)}
@@ -275,6 +275,87 @@ body.dragging #scroller{touch-action:none}
 @media (prefers-color-scheme:dark){.jsave{color:#14130f}}
 @media (max-width:699px){.jbody,.jfoot{padding-left:16px;padding-right:16px}.jtop{padding:10px 12px 6px}}
 
+/* ---- Goals ---- */
+#goals{overflow-y:auto;padding:16px;-webkit-overflow-scrolling:touch;background:var(--bg);min-height:0}
+#goals>*{max-width:1040px;margin-left:auto;margin-right:auto}
+#goals .k{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+#goals input[type=text]{font:inherit;font-size:16px;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);min-width:0;width:100%}
+button.sm{min-height:36px;padding:0 12px;font-size:14px}
+.ghead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.ghead h2{margin:0;font-size:20px}
+.gmode{flex:0 1 360px}
+.gsub{font-size:12px;color:var(--muted);margin:0}
+.gnote{margin-top:-4px;margin-bottom:12px;font-size:13px}
+.grewards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.gcardr{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.gcardr .v,.gbank .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.gcardr .v small{font-size:14px;color:var(--muted);font-weight:600}
+.gcardr.hit{border-color:var(--good);background:color-mix(in srgb,var(--good) 7%,var(--panel))}
+.gcardr .gsub{min-height:36px;display:flex;align-items:center}
+.gbar{height:8px;border-radius:4px;background:var(--line2);overflow:hidden;flex:1;min-width:40px}
+.gbar i{display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .2s}
+.gcardr.hit .gbar i{background:var(--good)}
+.gcardr .gbar{flex:none}
+.gbankrow{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.gwish{display:flex;flex-direction:column;gap:8px;margin-top:12px;border-top:1px solid var(--line2);padding-top:10px}
+.gwrow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(50px,1fr) auto auto;align-items:center;gap:10px;font-size:14px;min-height:36px}
+.gwn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gwh{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gbank>.gsub{margin-top:8px}
+.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:12px}
+.gcard{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.gcard header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.gcard h3{margin:0;font-size:17px}
+.gchip{font-size:12px;font-weight:600;padding:2px 8px;border-radius:8px;background:color-mix(in srgb,var(--c) 16%,transparent);white-space:nowrap}
+.gwhy{margin:0;font-style:italic;color:var(--muted);font-size:14px}
+.gaddwhy{align-self:flex-start;min-height:32px;padding:0;font-weight:500;font-size:14px}
+.gweek{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.gweek .gbar i{background:var(--c)}
+.gweek b{color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gstep{background:var(--bg);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.gstep p{margin:0;font-weight:600;font-size:15px}
+.gadd>input{flex:1 1 auto!important}.gadd>button{flex:0 0 auto!important}
+.gprac{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.gprac .k{width:100%}
+.gpbtn{min-height:40px;font-size:14px;border-radius:20px}
+.gpbtn small{color:var(--muted)}
+.gpbtn.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 18%,var(--panel));font-weight:600}
+.gfloor{margin:0;font-size:13px;color:var(--muted)}.gfloor b{color:var(--fg);font-weight:600}
+.gsess{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.gsess .k{margin-right:4px}
+.gsbtn{min-height:34px;font-size:13px;padding:0 10px;border-radius:17px;border-style:dashed}
+.gmss{display:flex;flex-direction:column;gap:2px}
+.gmss .k{display:flex;justify-content:space-between;align-items:center}
+.gmss .k button{min-height:32px;text-transform:none;letter-spacing:0;font-size:13px}
+.gms{display:flex;align-items:center;gap:10px;min-height:40px;font-size:14px}
+.gms input{width:22px;height:22px;accent-color:var(--c);flex:none}
+.gms span{flex:1}
+.gms time{font-size:12px;color:var(--muted);white-space:nowrap}
+.gms.done span{text-decoration:line-through;color:var(--muted)}
+.gcard footer{display:flex;gap:4px;flex-wrap:wrap;border-top:1px solid var(--line2);padding-top:6px;margin-top:auto}
+.gcard footer button{min-height:36px;font-weight:500;font-size:14px}
+.gsome{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.gsome>button{align-self:flex-start}
+.gsrow{display:flex;align-items:center;gap:10px;padding:4px 10px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.gsrow b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gfoot{display:flex;gap:8px;margin-top:8px;margin-bottom:8px}
+.gcenter{text-align:center;padding-bottom:32px}
+.gtpl{flex-direction:column;align-items:flex-start;text-align:left;padding:10px 14px;gap:2px;min-height:60px}
+.gtpl span{font-size:13px;color:var(--muted);font-weight:400}
+.gmenu{display:flex;flex-direction:column;gap:6px}
+.gta{font:inherit;font-size:16px;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);resize:vertical;font-weight:400}
+.pop input[type=date]{font:inherit;font-size:16px;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);width:100%;font-weight:400}
+.gedit .fl .gsub,.gedit .fl input{font-weight:400}
+.gstepr .lab{width:auto;flex:0 0 130px}
+.gtoward{display:flex;flex-direction:column;gap:6px}.gtoward .lab{font-size:13px;color:var(--muted)}
+.item.shelf{border-style:dashed;border-left-style:solid}
+.gshelf h4 span:last-child{font-weight:400}
+.glink{min-height:32px;font-size:12px;text-transform:none;letter-spacing:0;margin-left:auto;margin-right:4px;padding:0 4px}
+.jgoals{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:-4px 0 14px}.jgoals .jl{width:100%;font-size:13px}
+.jgoals .jchip{text-align:left;white-space:normal;padding:6px 12px}
+.jcounted{margin:0 0 14px}
+@media (max-width:699px){#goals{padding:12px}.grewards{gap:8px}.gcardr{padding:10px;gap:4px}.gcardr .v{font-size:18px}.gcardr .v small{display:block;font-size:12px}.gcardr .gsub{min-height:0;font-size:11px}.gcardr button.sm{padding:0 6px;font-size:13px}.gmore{display:none}.ggrid{grid-template-columns:1fr}.gbankrow{grid-template-columns:1fr 1fr}.gwrow{grid-template-columns:minmax(0,1fr) auto auto}.gwrow .gbar{display:none}}
+
 /* ---- Overlays ---- */
 #scrim{position:fixed;inset:0;z-index:20;display:none;background:transparent}
 #scrim.dim{background:rgba(0,0,0,.35)}
@@ -347,6 +428,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
       <button class="tab sel" data-mode="plan" role="tab" aria-selected="true">Planner</button>
       <button class="tab" data-mode="dash" role="tab" aria-selected="false">Dashboard</button>
       <button class="tab" data-mode="journal" role="tab" aria-selected="false">Journal</button>
+      <button class="tab" data-mode="goals" role="tab" aria-selected="false">Goals</button>
       <span class="grow"></span>
       <button id="gapChip" hidden></button>
       <button id="lotBtn" aria-pressed="false">Parking lot <span id="lotCount"></span></button>
@@ -370,6 +452,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
     </section>
     <section id="dash" aria-label="Dashboard"></section>
     <section id="journal" aria-label="Journal"></section>
+    <section id="goals" aria-label="Goals"></section>
   </main>
 </div>
 <div id="scrim"></div>

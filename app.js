@@ -113,7 +113,7 @@ let monthCur = monthOf(view);
 function render() {
   renderRail();
   renderBar();
-  if (mode === 'plan') { renderGrid(); if (lotOpen && !lotDrag) renderLot(); }
+  if (mode === 'plan') { renderStrip(); renderGrid(); if (lotOpen && !lotDrag) renderLot(); }
   else if (mode === 'dash') renderDash();
   else if (mode === 'goals') { if (goals) goals.render(); }
   else if (journal) journal.render();
@@ -148,11 +148,8 @@ function runText(now) {
 function renderTimers() {
   funBase = null;
   if (goals && state.timer && goals.funCat() === state.timer.cat) funBase = goals.freeLeft(false);
-  const gl = goals && goals.weekLine();
   $('#timers').replaceChildren(
-    h('div', { class: 'thead' }, 'Timers',
-      gl ? h('button', { class: 'link glink', id: 'goalLink', onclick: () => setMode('goals'), 'aria-label': `Goals this week: ${fmtH(gl.done)} of ${fmtH(gl.target)}` }, `Goals ${fmtH(gl.done)} / ${fmtH(gl.target)}`) : null,
-      h('button', { class: 'link', onclick: openCats }, 'Edit')),
+    h('div', { class: 'thead' }, 'Timers', h('button', { class: 'link', onclick: openCats }, 'Edit')),
     ...state.cats.map((c) => {
       const on = !!state.timer && state.timer.cat === c.id;
       return h('button', { class: 'tbtn' + (on ? ' on' : ''), style: `--c:${c.color}`, 'data-cat': c.id, 'aria-pressed': on ? 'true' : 'false', onclick: () => toggleTimer(c.id) },
@@ -188,6 +185,44 @@ function renderGrid() {
     const c = catOf(t.cat);
     cols.actual.append(h('div', { class: 'run', id: 'run', style: `--c:${c.color};top:${yOf(view, t.startedAt)}px` }, `${c.name} · running`));
   }
+}
+
+// ---- Goal bars: this week's hours for each active goal, on the Planner every day ----
+function renderStrip() {
+  const el = $('#goalStrip'), bars = goals ? goals.bars(view) : [];
+  el.hidden = !bars.length;
+  if (!bars.length) { el.replaceChildren(); return; }
+  const wk = L.weekDays(view)[0], label = wk === L.weekDays(today())[0] ? 'This week' : `Week of ${fmtShort(wk)}`;
+  el.replaceChildren(h('span', { class: 'gsl' }, goals.isDeal(view) ? `${label} · deal` : label), ...bars.map((b) =>
+    h('button', { class: 'gsb' + (b.target && b.done >= b.target ? ' hit' : ''), style: `--c:${b.color}`, 'data-goal': b.id, 'aria-label': `${b.name}: ${fmtH(b.done)} of ${fmtH(b.target)} this week`, onclick: () => openStripPop(b.id) },
+      h('span', { class: 'gsn' }, b.name), h('span', { class: 'gbar' }, h('i', { style: `width:${Math.min(100, b.target ? (b.done / b.target) * 100 : 0)}%` })), h('b', {}, `${fmtH(b.done)} / ${fmtH(b.target)}`))));
+}
+function openStripPop(id) {
+  const day = view, g = goals.active().find((x) => x.id === id);
+  if (!g) return;
+  const val = h('span', { class: 'val' }), info = h('p', { class: 'muted' });
+  const draw = () => {
+    const b = goals.bars(day).find((x) => x.id === id);
+    if (!b) return;
+    val.textContent = `${fmtH(goals.baseTarget(id, day))} a week`;
+    info.textContent = `${fmtH(b.done)} of ${fmtH(b.target)} this week${goals.isDeal(day) ? ' (deal week: a quarter of the usual)' : ''}`;
+    renderStrip();
+  };
+  const step = (d) => { const t = goals.baseTarget(id, day) + d; if (t < 15 || t > 2400) return; goals.setTarget(id, t, day); draw(); };
+  const add = (m) => {
+    const cid = goals.addTime(id, m, day); draw();
+    toast(`Added ${fmtH(m)} to ${g.name}`, 'Undo', () => { goals.removeCheck(cid); renderStrip(); if (overlay && overlay.kind === 'gstrip') draw(); }, 5000);
+  };
+  const el = h('div', { class: 'pop', role: 'dialog', 'aria-label': `${g.name} this week` },
+    h('h3', {}, g.name), info,
+    stepRow('Target', val, () => step(-30), () => step(30)),
+    h('p', { class: 'muted' }, 'Add time you didn’t log on the planner'),
+    h('div', { class: 'row' }, [15, 30, 60].map((m) => h('button', { 'data-add': String(m), onclick: () => add(m) }, `+${fmtH(m)}`))),
+    h('div', { class: 'row' },
+      h('button', { onclick: () => { closeOverlay(); goals.setActive(id, false); render(); } }, 'Make inactive'),
+      h('button', { class: 'primary', onclick: () => { closeOverlay(); goals.open(id); } }, 'Details')));
+  showOverlay(el, 'gstrip', `#goalStrip [data-goal="${CSS.escape(id)}"]`, false);
+  draw();
 }
 
 const place = (el, s, e) => { el.style.top = (s / L.STEP) * SLOT_PX + 1 + 'px'; el.style.height = ((e - s) / L.STEP) * SLOT_PX - 2 + 'px'; };
@@ -1083,7 +1118,7 @@ function startSync(cfg, keep = true) {
     getState: () => state,
     applyState: (next) => { state = { ...fresh(), ...next }; persist(); render(); },
     // Don't swap data under an open editor or a drag; sheets that don't edit data are safe.
-    isBusy: () => dragging() || journal.busy() || goals.busy() || !!(overlay && !['menu', 'month', 'sealed', 'copy', 'setup', 'unlock', 'jitem', 'jio', 'gsheet'].includes(overlay.kind)),
+    isBusy: () => dragging() || journal.busy() || goals.busy() || !!(overlay && !['menu', 'month', 'sealed', 'copy', 'setup', 'unlock', 'jitem', 'jio', 'gsheet', 'gstrip'].includes(overlay.kind)),
     onStatus: setSync,
     loadBase: () => { try { const b = JSON.parse(localStorage.getItem(BASE)); return b && b.repo === cfg.repo ? b : null; } catch { return null; } },
     saveBase: (b) => { try { localStorage.setItem(BASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
@@ -1105,7 +1140,7 @@ function startSync(cfg, keep = true) {
   gsync = S.fileSync(cfg, 'goals.json', {
     getState: () => goals.data,
     applyState: (next) => { goals.replace(next); render(); },
-    isBusy: () => dragging() || goals.busy() || !!(overlay && ['gsheet', 'pop'].includes(overlay.kind)),
+    isBusy: () => dragging() || goals.busy() || !!(overlay && ['gsheet', 'gstrip', 'pop'].includes(overlay.kind)),
     onStatus: (s, msg) => { if (s !== 'ok') setSync(s, msg); },
     loadBase: () => { try { const b = JSON.parse(localStorage.getItem(GBASE)); return b && b.repo === cfg.repo ? b : null; } catch { return null; } },
     saveBase: (b) => { try { localStorage.setItem(GBASE, JSON.stringify({ ...b, repo: cfg.repo })); } catch {} },
@@ -1284,8 +1319,9 @@ journal = createJournal({ h, toast, showOverlay, closeOverlay, deliver, copyText
   goalHints: () => (goals ? goals.hints() : null), fmtH });
 // ---- Goals tab (syncs as goals.json when sync is on) ----
 goals = createGoals({ h, toast, showOverlay, closeOverlay, addToLot, fmtH, planner: () => state, syncOn: () => !!syncCfg,
+  onClose: (fn) => { if (overlay) overlay.onClose = fn; },
   openLot: () => { setMode('plan'); setLot(true); },
-  onChange: () => { if (gsync) gsync.touch(); renderTimers(); } });
+  onChange: () => { if (gsync) gsync.touch(); renderTimers(); if (mode === 'plan') renderStrip(); } });
 
 // ---- Wiring ----
 const goto = (key) => { view = key; monthCur = monthOf(key); closeOverlay(); render(); if (mode === 'plan') scrollToDefault(); };

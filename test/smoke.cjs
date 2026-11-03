@@ -569,159 +569,146 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
 
   // ======================= Goals =======================
   {
-    const GF = { ...FIXTURE, blocks: [...FIXTURE.blocks, B('g1', 'actual', 'career', 'Pitch work', 360, 480)] };
+    const GF = { ...FIXTURE, blocks: [...FIXTURE.blocks, B('g1', 'actual', 'career', 'Pitch work', 360, 480), B('gp', 'plan', 'self', 'Gym', 120, 180)] };
     const { c, p, errs } = await open(1180, 820, { data: GF });
     const gd = () => p.evaluate(() => JSON.parse(localStorage.getItem('dailyos.goals')));
-    const card = (id) => `#goals .gcard[data-goal="${id}"]`;
+    const WK = '2026-10-25', card = (id) => `#goals .gcard[data-goal="${id}"]`;
     const bars = () => p.$$eval('#goalStrip .gsb', (els) => els.map((e) => `${e.querySelector('.gsn').textContent}=${e.querySelector('b').textContent}`));
-    // --- Planner: weekly bars for active goals ---
-    ok('goal bars: names aren’t cut off', await p.$$eval('#goalStrip .gsn', (els) => els.every((e) => e.scrollWidth <= e.clientWidth)));
-    ok('goal bars: on the Planner, one per active goal', (await bars()).join('|') === 'Hedge fund seat=2h / 12h|HYROX=0m / 4h 30m|Satsang=0m / 2h 30m', (await bars()).join('|'));
-    ok('goal bars: labelled this week', (await p.$eval('#goalStrip .gsl', (e) => e.textContent)) === 'This week');
+    const chip = () => p.$eval('#weekChip', (e) => e.textContent);
+    // --- Planner row: the week, each goal, misses ---
+    ok('goals: starts with one example of each kind', (await bars()).join('|') === 'Land a hedge fund role=2h / 6h|Gym=0m / 4h', (await bars()).join('|'));
+    ok('goal row: invites you to set up the week', (await chip()) === 'Set up your week');
+    ok('goal row: flags a missed session', (await p.$eval('#missChip', (e) => e.textContent)) === '1 missed');
+    ok('goal row: names aren’t cut off', await p.$$eval('#goalStrip .gsn', (els) => els.every((e) => e.scrollWidth <= e.clientWidth)));
     const sb0 = await box(p, '#goalStrip'), hd = await box(p, '#planner .heads'), pc = await box(p, '.col.plan'), ac = await box(p, '.col.actual');
-    ok('goal bars: a slim row above Plan / Actual, columns unchanged', sb0.h <= 50 && sb0.b <= hd.y + 1 && Math.abs(pc.w - ac.w) <= 1, `${sb0.h} ${sb0.b} ${hd.y}`);
+    ok('goal row: slim, above Plan / Actual, columns unchanged', sb0.h <= 50 && sb0.b <= hd.y + 1 && Math.abs(pc.w - ac.w) <= 1, `${sb0.h}`);
     const last = await p.evaluate(() => Math.round([...document.querySelectorAll('#timers .tbtn')].at(-1).getBoundingClientRect().bottom));
-    ok('goal bars: rail still fits all 5 timers', last <= 820, last);
-    await p.screenshot({ path: path.join(SHOTS, '22-planner-goal-bars.png') });
-    await p.click('#goalStrip .gsb[data-goal="hf"]');
-    ok('goal bars: tap opens an editor', (await p.$eval('.pop h3', (e) => e.textContent)) === 'Hedge fund seat' && /2h of 12h this week/.test(await p.$eval('.pop .muted', (e) => e.textContent)));
-    await p.click('.pop [aria-label="Target more"]');
-    ok('goal bars: weekly hours are editable', (await gd()).goals[0].phases[0].target === 750 && (await bars())[0] === 'Hedge fund seat=2h / 12h 30m', (await bars())[0]);
-    await p.click('.pop button[data-add="30"]');
-    ok('goal bars: add time you didn’t log', (await bars())[0] === 'Hedge fund seat=2h 30m / 12h 30m' && (await gd()).checks.some((x) => x.practice === 'manual' && x.credit === 30));
+    ok('goal row: rail still fits all 5 timers', last <= 820, last);
+    await p.screenshot({ path: path.join(SHOTS, '22-planner-goal-row.png') });
+    // --- Week setup ---
+    await p.click('#weekChip');
+    ok('week setup: a row per active goal, first-week note', (await p.$$('.pop .gwrow')).length === 2 && /First week/.test(await p.$eval('.pop .muted', (e) => e.textContent)));
+    await p.click('.pop [aria-label="Gym more"]');
+    await p.click('.pop .chips .chip:text-is("A new book")');
+    await p.screenshot({ path: path.join(SHOTS, '23-week-setup.png') });
+    await p.click('.pop button:text-is("Start the week")');
+    ok('week setup: saves hours and the reward', JSON.stringify((await gd()).weeks[WK]) === JSON.stringify({ setup: true, deal: false, reward: 'A new book', hours: { 'ex-gym': 270 } }), JSON.stringify((await gd()).weeks[WK]));
+    ok('goal row: shows the week and its reward', (await chip()) === 'Week 2h / 10h 30m → A new book', await chip());
+    // --- Missed: skip, undo, did it ---
+    await p.click('#missChip');
+    ok('missed: offers Did it / Tomorrow / Skip', (await p.$$eval('.pop .gmissrow button', (els) => els.map((e) => e.textContent))).join('|') === 'Did it|Tomorrow|Skip' && /2 skips left this week/.test(await p.$eval('.pop .gmissrow', (e) => e.textContent)));
+    await p.screenshot({ path: path.join(SHOTS, '24-missed.png') });
+    await p.click('.pop .gmissrow button:text-is("Skip")');
+    ok('missed: a skip lowers this week’s target, and clears the flag', (await bars())[1] === 'Gym=0m / 3h 30m' && !(await p.$('#missChip')));
     await p.click('#toast button');
-    ok('goal bars: added time has Undo', (await bars())[0] === 'Hedge fund seat=2h / 12h 30m' && (await gd()).checks.length === 0);
-    await p.screenshot({ path: path.join(SHOTS, '23-goal-bar-editor.png') });
+    ok('missed: skip has Undo', (await bars())[1] === 'Gym=0m / 4h 30m' && !!(await p.$('#missChip')));
+    await p.click('#missChip');
+    await p.click('.pop .gmissrow button:text-is("Did it")');
+    const did = (await st(p)).blocks.find((b) => b.layer === 'actual' && b.start === 120 && b.day === DAY);
+    ok('missed: “Did it” logs the session', !!did && did.goal === 'ex-gym' && did.title === 'Gym' && (await bars())[1] === 'Gym=1h / 4h 30m');
+    // --- Bar editor ---
+    await p.click('#goalStrip .gsb[data-goal="ex-gym"]');
+    await p.click('.pop button[data-add="30"]');
+    ok('goal bar: add time you didn’t log', (await bars())[1] === 'Gym=1h 30m / 4h 30m');
+    await p.click('#toast button');
+    ok('goal bar: Undo', (await bars())[1] === 'Gym=1h / 4h 30m');
     await esc(p);
-    await p.click('#goalStrip .gsb[data-goal="satsang"]');
-    await p.click('.pop button:text-is("Make inactive")');
-    ok('goal bars: make a goal inactive from the Planner', (await bars()).length === 2 && (await gd()).goals.find((g) => g.id === 'satsang').status === 'inactive');
-    // --- Goals tab: simple ---
+    // --- Goals tab ---
     await p.click('#bar .tab[data-mode="goals"]');
-    ok('goals: fourth tab, rail stays, planner buttons hidden', (await box(p, '#goals')).vis && !(await box(p, '#planner')).vis && (await box(p, '#rail')).vis && !(await box(p, '#lotBtn')).vis && !(await box(p, '#gapChip')).vis);
-    ok('goals: only active goals shown', (await p.$$eval('#goals .gcard .gname', (els) => els.map((e) => e.textContent))).join('|') === 'Hedge fund seat|HYROX');
-    await p.click('.gsome > button');
-    await p.click('#goals .gsrow[data-goal="satsang"] button:text-is("Make active")');
-    ok('goals: move a goal back to active any time', (await p.$$('#goals .gcard')).length === 3 && (await gd()).goals.find((g) => g.id === 'satsang').status === 'active');
-    ok('goals: one summary line for the week', (await p.$eval('.gsumw b', (e) => e.textContent)) === '2h / 19h 30m' && (await p.$eval('#gFree', (e) => e.textContent)) === '0m', await p.$eval('.gsumw b', (e) => e.textContent));
-    const cardLines = await p.$$eval(`${card('hf')} > *`, (els) => els.length);
-    ok('goals: a card is name, this week, next step, next milestone, details', cardLines === 5, cardLines);
-    ok('goals: phase countdown', (await p.$eval(`${card('fitness')} .gchip`, (e) => e.textContent)) === 'Foundation · 31 weeks to go' && (await p.$eval(`${card('hf')} .gchip`, (e) => e.textContent)) === 'Coverage · 23 weeks to go');
-    ok('goals: next milestone on the card', /Coverage list: 15 Industrials/.test(await p.$eval(`${card('hf')} .gms1`, (e) => e.textContent)));
-    await p.screenshot({ path: path.join(SHOTS, '24-goals.png') });
-    await p.click(`${card('hf')} .gnext .gtick`);
-    ok('goals: tick the next step, earn the bonus', /\+30m free time/.test(await toastText(p)) && (await gd()).goals[0].steps[0].done === true);
+    ok('goals: tab shows only this week and the goals', (await p.$eval('.gsum b', (e) => e.textContent)) === '3h / 10h 30m' && (await p.$$('#goals .gcard')).length === 2 && (await p.$$eval('#goals .gchip', (els) => els.filter((e) => e.textContent === 'Example').length)) === 2);
+    ok('goals: habit card shows when and where', /Mon, Wed, Fri at 7am/.test(await p.$eval(`${card('ex-gym')} .gcue`, (e) => e.textContent)));
+    ok('goals: milestone card shows the milestone and next task', /Coverage list: 15 names/.test(await p.$eval(`${card('ex-job')} .gmsh`, (e) => e.textContent)) && (await p.$eval(`${card('ex-job')} .gnext p`, (e) => e.textContent)) === 'Pick the sub-sector');
+    await p.screenshot({ path: path.join(SHOTS, '25-goals.png') });
+    await p.click(`${card('ex-job')} .gnext .gtick`);
+    ok('goals: tick a task, the next one is up', (await p.$eval(`${card('ex-job')} .gnext p`, (e) => e.textContent)) === 'List 15 names with tickers');
+    await p.click(`${card('ex-job')} .gnext .gtick`);
     await p.waitForTimeout(100);
-    ok('goals: then asks for the next small step', await p.evaluate(() => !!document.activeElement && !!document.activeElement.closest('[data-goal="hf"] .gnext')));
-    await p.keyboard.type('Screen industrials for a short idea'); await p.keyboard.press('Enter');
-    ok('goals: next step saved', (await p.$eval(`${card('hf')} .gnext p`, (e) => e.textContent)) === 'Screen industrials for a short idea');
-    await p.click(`${card('satsang')} .gpbtn[data-practice="sat-p1"]`);
-    ok('goals: one-tap check-in', (await p.$eval(`${card('satsang')} .gweek b`, (e) => e.textContent)) === '20m / 2h 30m');
-    // --- Details: milestones are editable ---
-    await p.click(`${card('hf')} .gname`);
-    ok('details: opens the goal', (await p.$$('.pop.gwide .gmrow')).length === 10);
-    ok('details: no stray text, fits its width', !/null|undefined|NaN/.test(await p.$eval('.pop.gwide', (e) => e.textContent)) && (await box(p, '.pop.gwide')).w === 560);
-    await p.fill('.pop.gwide .gmrow[data-ms="hf2-m1"] input[aria-label="Milestone"]', 'Coverage list: 12 names');
-    await p.fill('.pop.gwide .gmrow[data-ms="hf2-m3"] input[aria-label^="Reward for"]', 'Dinner at Au Cheval');
-    await p.fill('.pop.gwide .gmrow[data-ms="hf2-m3"] input[type=date]', '2026-12-31');
-    await p.fill('.pop.gwide input[aria-label="New milestone"]', 'Present a pitch to a PM'); await p.press('.pop.gwide input[aria-label="New milestone"]', 'Enter');
-    await p.click('.pop.gwide .gmrow[data-ms="hf2-m9"] button[aria-label^="Remove milestone"]');
-    await p.fill('.pop.gwide input[aria-label="New step"]', 'Email two headhunters'); await p.press('.pop.gwide input[aria-label="New step"]', 'Enter');
-    await p.click('.pop.gwide button[aria-label="Make next: Email two headhunters"]');
-    await p.screenshot({ path: path.join(SHOTS, '25-goal-details.png') });
+    ok('goals: out of tasks, it asks for the next', await p.evaluate(() => !!document.activeElement && !!document.activeElement.closest('[data-goal="ex-job"] .gnext')));
+    await p.keyboard.type('Email two headhunters'); await p.keyboard.press('Enter');
+    ok('goals: task added', (await p.$eval(`${card('ex-job')} .gnext p`, (e) => e.textContent)) === 'Email two headhunters');
+    await p.click(`${card('ex-job')} .gmsh button`);
+    ok('goals: milestone done, the next shows its reward', /First long pitch.*→ Dinner somewhere good/.test(await p.$eval(`${card('ex-job')} .gmsh`, (e) => e.textContent)) && !(await p.$(`${card('ex-job')} .gchip:text-is("Example")`)));
+    await p.click(`${card('ex-job')} .gmsh button`);
+    ok('goals: a milestone reward is earned', /You earned: Dinner somewhere good/.test(await toastText(p)));
+    await p.click('#toast button');
+    // --- Details ---
+    await p.click(`${card('ex-job')} .gname`);
+    ok('details: milestones with tasks, editable', (await p.$$('.pop.gwide .gmrow')).length === 3 && !/null|undefined|NaN/.test(await p.$eval('.pop.gwide', (e) => e.textContent)) && (await box(p, '.pop.gwide')).w === 560);
+    await p.fill('.pop.gwide .gmrow[data-ms="ex-job-m3"] input[aria-label="Milestone"]', 'Offer from a multi-manager');
+    await p.fill('.pop.gwide .gmrow[data-ms="ex-job-m3"] .gaddt', 'Meet 5 headhunters'); await p.press('.pop.gwide .gmrow[data-ms="ex-job-m3"] .gaddt', 'Enter');
+    await p.click('.pop.gwide .gmrow[data-ms="ex-job-m2"] button[aria-label="Remove task Build the model"]');
+    await p.screenshot({ path: path.join(SHOTS, '26-goal-details.png') });
     await p.click('.pop.gwide button:text-is("Done")');
-    const hf = (await gd()).goals[0];
-    const m1 = hf.milestones.find((m) => m.id === 'hf2-m1'), m3 = hf.milestones.find((m) => m.id === 'hf2-m3');
-    ok('details: edit milestone text, date and reward', m1.text === 'Coverage list: 12 names' && m3.reward === 'Dinner at Au Cheval' && m3.date === '2026-12-31');
-    ok('details: add and remove milestones', hf.milestones.some((m) => m.text === 'Present a pitch to a PM') && !hf.milestones.some((m) => m.id === 'hf2-m9') && hf.milestones.length === 10);
-    ok('details: add a step and make it next', (await p.$eval(`${card('hf')} .gnext p`, (e) => e.textContent)) === 'Email two headhunters');
-    ok('details: card shows the edited milestone', /Coverage list: 12 names/.test(await p.$eval(`${card('hf')} .gms1`, (e) => e.textContent)));
-    // new goal
-    await p.click('#goals button:text-is("+ New goal")');
-    ok('goals: four templates', (await p.$$eval('.pop .gtpl b', (els) => els.map((e) => e.textContent))).join('|') === 'Event|Practice|Project|Skill');
-    await p.click('.pop .gtpl[data-shape="mastery"]');
-    await p.fill('.pop.gwide input[aria-label="Goal name"]', 'Spanish');
+    const job = (await gd()).goals.find((g) => g.id === 'ex-job');
+    ok('details: edits saved', job.milestones[2].text === 'Offer from a multi-manager' && job.milestones[2].tasks[0].text === 'Meet 5 headhunters' && !job.milestones[1].tasks.some((t) => t.text === 'Build the model'));
+    await p.click('#goals button:text-is("+ Add goal")');
+    ok('add: two kinds', (await p.$$eval('.pop .gtpl b', (els) => els.map((e) => e.textContent))).join('|') === 'Habit|Milestone goal');
+    await p.click('.pop .gtpl[data-kind="habit"]');
+    await p.fill('.pop.gwide input[aria-label="Goal name"]', 'Ahnik');
     await p.click('.pop.gwide button:text-is("Done")');
-    ok('goals: new goal from a template', (await gd()).goals.some((g) => g.name === 'Spanish' && g.shape === 'mastery') && (await p.$$('#goals .gcard')).length === 4);
-    await p.click(`${card((await gd()).goals.find((g) => g.name === 'Spanish').id)} .gname`);
+    ok('add: new habit', (await p.$$('#goals .gcard')).length === 3 && (await gd()).goals.some((g) => g.name === 'Ahnik' && g.kind === 'habit'));
+    await p.click(`#goals .gcard:has(.gname:text-is("Ahnik")) .gname`);
     await p.click('.pop.gwide .seg button[data-status="inactive"]');
     await p.click('.pop.gwide button:text-is("Done")');
-    ok('goals: set inactive from details', (await p.$$('#goals .gcard')).length === 3);
-    // deal week
-    await p.click('.gdeal');
-    ok('goals: deal week drops every goal to a quarter', (await p.$eval('.gsumw b', (e) => e.textContent)) === '2h 20m / 5h 15m', await p.$eval('.gsumw b', (e) => e.textContent));
-    await p.click('#bar .tab[data-mode="plan"]');
-    ok('goal bars: show the deal week', (await p.$eval('#goalStrip .gsl', (e) => e.textContent)) === 'This week · deal' && (await bars())[0] === 'Hedge fund seat=2h / 3h 15m', (await bars())[0]);
-    await p.click('#prev'); // Sunday, same week: the 4h daily cap would stop more counting today
-    await p.click('#goalStrip .gsb[data-goal="hf"]');
-    for (let i = 0; i < 3; i++) await p.click('.pop button[data-add="60"]');
-    await esc(p);
-    await p.click('#next');
-    ok('goal bars: a goal that hits its hours is marked', await p.$eval('#goalStrip .gsb[data-goal="hf"]', (e) => e.classList.contains('hit')));
-    await p.click('#bar .tab[data-mode="goals"]');
-    await p.click('.gsum button[data-claim="week"]');
-    ok('goals: claim offers your reward menu', (await p.$$eval('.pop .gmenu button', (els) => els.map((e) => e.textContent))).join('|') === 'Dinner somewhere good|A new book|Movie night, no laptop');
-    await p.click('.pop .gmenu button >> nth=0');
-    ok('goals: reward claimed', (await gd()).claims[0].text === 'Dinner somewhere good' && /Dinner somewhere good/.test(await p.$eval('.gsum', (e) => e.textContent)));
-    await p.click('.gsum .gopen');
-    ok('rewards: month, quarter, free time and wishlist live in one sheet', (await p.$$('.pop .gprow[data-period]')).length === 3 && (await p.$$('.pop .gprow[data-wish]')).length === 1);
-    await p.screenshot({ path: path.join(SHOTS, '26-rewards.png') });
-    await esc(p);
+    ok('inactive: hidden from the tab and the planner', (await p.$$('#goals .gcard')).length === 2 && /Inactive \(1\)/.test(await p.$eval('.gsome > button', (e) => e.textContent)));
+    // --- Hit the week, claim ---
+    await p.click('#goals .ghead button:text-is("Edit week")');
+    for (let i = 0; i < 8; i++) await p.click('.pop [aria-label="Land a hedge fund role less"]');
+    for (let i = 0; i < 7; i++) await p.click('.pop [aria-label="Gym less"]');
+    await p.click('.pop button:text-is("Start the week")');
+    ok('claim: appears when every goal’s hours are in', (await p.$eval('.gsum button[data-claim]', (e) => e.textContent).catch(() => '')) === 'Claim: A new book');
+    await p.click('.gsum button[data-claim]');
+    ok('claim: reward earned', !!(await gd()).weeks[WK].claimed && /★ A new book/.test(await p.$eval('.gsum', (e) => e.textContent)));
     const txt = await p.$eval('#goals', (e) => e.textContent);
     ok('goals: no streaks or guilt copy', !/streak|missed|behind|overdue|you should|failed/i.test(txt));
     ok('goals: no stray text', !/null|undefined|NaN/.test(txt));
-    // Parking lot shelf
+    // --- Fire drill shows rough-day versions ---
     await p.click('#bar .tab[data-mode="plan"]');
+    ok('goal row: claimed reward shows', (await chip()) === '★ A new book');
+    await p.click('#fireBtn');
+    ok('fire drill: rough-day versions', /Gym: 20-minute walk/.test(await p.$eval('.pop .grough', (e) => e.textContent).catch(() => '')));
+    await esc(p);
+    // --- Parking lot shelf ---
     await p.click('#lotBtn');
     const shelf = await p.$$eval('#lotList .gshelf .itxt', (els) => els.map((e) => e.textContent));
-    ok('goals: Parking lot shelf of active goals’ sessions', shelf[0] === 'Model a coverage name' && shelf.includes('Strength A (squat, bench, row)') && !shelf.includes('Practice session'), shelf.join('|'));
+    ok('shelf: sessions of active goals', shelf.join('|') === 'Pitch work|Model a company|Strength|Run', shelf.join('|'));
     await seeMin(p, 840);
     const shelfXY = await p.$eval('#lotList .gshelf .item', (e) => { const r = e.getBoundingClientRect(); return { x: r.left + 30, y: r.top + r.height / 2 }; });
     const lot0 = (await st(p)).lot.length;
     await mouseDrag(p, shelfXY, await slotXY(p, 'plan', 840), 12);
     const sb = (await st(p)).blocks.find((b) => b.layer === 'plan' && b.start === 840);
-    ok('goals: a session drags onto the Plan, linked, no prompt', !!sb && sb.title === 'Model a coverage name' && sb.goal === 'hf' && sb.cat === 'career' && sb.end === 930 && (await p.$$('.pop')).length === 0);
-    ok('goals: sessions stay on the shelf', (await st(p)).lot.length === lot0);
+    ok('shelf: drag a session onto the Plan, linked, no prompt', !!sb && sb.title === 'Pitch work' && sb.goal === 'ex-job' && sb.end === 930 && (await p.$$('.pop')).length === 0 && (await st(p)).lot.length === lot0);
     await p.click('#toast button');
-    ok('goals: undo doesn’t dump the session into the lot', (await st(p)).lot.length === lot0 && !(await st(p)).blocks.some((b) => b.id === sb.id));
+    ok('shelf: undo doesn’t dump it into the lot', (await st(p)).lot.length === lot0);
     await p.click('#lotClose');
-    // popover: Counts toward
     await seeMin(p, 180);
     await p.click('#grid [data-id="p1"] .bt');
-    ok('goals: block popover offers Counts toward (active goals)', (await p.$$eval('.pop .gtoward .chip', (els) => els.map((e) => e.textContent))).join('|') === 'Hedge fund seat|HYROX|Satsang|None');
-    await p.click('.pop .gtoward .chip[data-goal="hf"]');
-    ok('goals: link a block to a goal', (await blk(p, 'p1')).goal === 'hf');
+    ok('popover: Counts toward', (await p.$$eval('.pop .gtoward .chip', (els) => els.map((e) => e.textContent))).join('|') === 'Land a hedge fund role|Gym|None');
+    await p.click('.pop .gtoward .chip[data-goal="ex-job"]');
+    ok('popover: link a block', (await blk(p, 'p1')).goal === 'ex-job');
     await esc(p);
-    await seeMin(p, 360);
-    await p.click('#grid [data-id="g1"] .bt');
-    await p.click('.pop .gtoward .chip[data-goal=""]');
-    await esc(p);
-    ok('goals: “None” stops a block counting, bars update', (await bars())[0].startsWith('Hedge fund seat=3h / '), (await bars())[0]);
-    // Drift timer shows earned time left
-    await p.click('#timers .tbtn[data-cat="drift"]');
-    ok('goals: a Drift timer shows earned free time left', /earned left$/.test(await p.$eval('#timers .tbtn[data-cat="drift"] .ts', (e) => e.textContent)));
-    await p.click('#timers .tbtn[data-cat="drift"]');
-    // journal
+    // --- Journal ---
     await p.click('#bar .tab[data-mode="journal"]');
     const jc = await p.$$eval('.jgoals .jchip', (els) => els.map((e) => e.textContent));
-    ok('goals → journal: next steps offered for the one thing', jc[0] === 'Email two headhunters' && jc.length === 3, jc.join('|'));
-    await p.click('.jgoals .jchip >> nth=0');
-    ok('goals → journal: tap one to make it today’s one thing', (await p.$eval('.jfield[data-f="m3"]', (e) => e.value)) === 'Email two headhunters');
-    ok('goals → journal: evening shows what counted today', /Today counted toward .*Satsang 20m/.test(await p.$eval('.jcounted', (e) => e.textContent).catch(() => '')));
+    ok('journal: next task offered as the one thing', jc.join('|') === 'Choose the company', jc.join('|'));
+    ok('journal: what counted today', /Today counted toward .*Gym 1h/.test(await p.$eval('.jcounted', (e) => e.textContent).catch(() => '')));
     ok('goals: no console errors', errs.length === 0, errs.join(' | '));
     await c.close();
   }
   for (const [w, hh, dark, mobile, tag] of [[1180, 820, true, false, 'dark'], [390, 844, false, true, 'phone'], [744, 1133, false, false, 'mini']]) {
-    const { c, p, errs } = await open(w, hh, { dark, mobile, data: { ...FIXTURE, blocks: [...FIXTURE.blocks, B('g1', 'actual', 'career', 'Pitch work', 360, 480)] } });
-    await p.screenshot({ path: path.join(SHOTS, `27-planner-bars-${tag}.png`) });
-    const stripOk = (await p.$$('#goalStrip .gsb')).length === 3 && !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth));
+    const { c, p, errs } = await open(w, hh, { dark, mobile, data: { ...FIXTURE, blocks: [...FIXTURE.blocks, B('g1', 'actual', 'career', 'Pitch work', 360, 480), B('gp', 'plan', 'self', 'Gym', 120, 180)] } });
+    await p.screenshot({ path: path.join(SHOTS, `27-planner-${tag}.png`) });
+    const rowOk = (await p.$$('#goalStrip .gsb')).length === 2 && !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth));
+    await p.click('#weekChip');
+    await p.screenshot({ path: path.join(SHOTS, `28-week-${tag}.png`) });
+    await esc(p);
     await p.click('#bar .tab[data-mode="goals"]');
-    await p.screenshot({ path: path.join(SHOTS, `28-goals-${tag}.png`) });
+    await p.screenshot({ path: path.join(SHOTS, `29-goals-${tag}.png`) });
     const over = await p.evaluate(() => document.querySelector('#goals').scrollWidth > document.querySelector('#goals').clientWidth);
-    await p.click('#goals .gcard[data-goal="fitness"] .gname');
-    await p.screenshot({ path: path.join(SHOTS, `29-details-${tag}.png`) });
+    await p.click('#goals .gcard[data-goal="ex-job"] .gname');
+    await p.screenshot({ path: path.join(SHOTS, `30-details-${tag}.png`) });
     const sheetOver = await p.evaluate(() => { const e = document.querySelector('.pop.gwide'); return e.scrollWidth > e.clientWidth + 1; });
-    ok(`goals ${tag}: bars, tab and details render cleanly`, stripOk && (await p.$$('#goals .gcard')).length === 3 && !over && !sheetOver && errs.length === 0, `${stripOk} ${over} ${sheetOver} ${errs.join(' | ')}`);
+    ok(`goals ${tag}: row, setup, tab and details render cleanly`, rowOk && !over && !sheetOver && errs.length === 0, `${rowOk} ${over} ${sheetOver} ${errs.join(' | ')}`);
     await c.close();
   }
 
@@ -835,15 +822,15 @@ const seed = (data, extra = '') => `(() => { if (!sessionStorage.getItem('seeded
     ok('journal sync: the other device gets the entry and the answer', (await P.$$eval('.jfrag .jt', (els) => els.map((e) => e.textContent))).includes('remembered Swami at lunch') && (await P.$eval('.jfield[data-f="swamiPm"]', (e) => e.value)) === 'Paused before the call');
     // goals sync too, as goals.json
     await Q.click('#bar .tab[data-mode="goals"]');
-    await Q.click('[data-goal="satsang"] .gpbtn[data-practice="sat-p1"]');
+    await Q.click('.gcard[data-goal="ex-job"] .gnext .gtick');
     await Q.waitForTimeout(2600);
     const gj = GH.read('goals.json');
-    ok('goals sync: saves to goals.json in the same repo', !!gj && gj.checks.length === 1 && gj.goals.length === 5);
+    ok('goals sync: saves to goals.json in the same repo', !!gj && gj.v === 3 && gj.goals.length === 2 && gj.goals[0].milestones[0].tasks[0].done === true);
     await P.click('#bar .tab[data-mode="goals"]');
     await P.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await P.waitForTimeout(1500);
-    ok('goals sync: the other device gets the check-in', (await P.$eval('[data-goal="satsang"] .gpbtn[data-practice="sat-p1"]', (e) => e.getAttribute('aria-pressed'))) === 'true');
-    ok('goals sync: starter goals aren’t duplicated', JSON.parse(await P.evaluate(() => localStorage.getItem('dailyos.goals'))).goals.length === 5);
+    ok('goals sync: the other device gets it', (await P.$eval('.gcard[data-goal="ex-job"] .gnext p', (e) => e.textContent)) === 'List 15 names with tickers');
+    ok('goals sync: examples aren’t duplicated', JSON.parse(await P.evaluate(() => localStorage.getItem('dailyos.goals'))).goals.length === 2);
     await P.click('#bar .tab[data-mode="plan"]'); await Q.click('#bar .tab[data-mode="plan"]');
     // third device with its own data: choose to combine
     const mini = await open(744, 1133, { data: { ...FIXTURE, blocks: [B('own', 'plan', 'self', 'Own block', 900, 930)], lot: [] }, extra });

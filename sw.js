@@ -1,4 +1,4 @@
-const CACHE = 'dailyos-v14';
+const CACHE = 'dailyos-v15';
 const ASSETS = ['./', './index.html', './app.js', './logic.js', './charts.js', './sync.js', './journal.js', './goals.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

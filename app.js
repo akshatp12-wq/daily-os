@@ -137,17 +137,8 @@ function renderRail() {
   renderMonth();
 }
 
-// A running timer in the "fun" category shows how much earned free time is left.
-let funBase = null;
-function runText(now) {
-  const t = state.timer;
-  let s = '● ' + fmtDur(now - t.startedAt);
-  if (funBase != null) s += ` · ${fmtH(Math.max(0, funBase - (now - t.startedAt) / 60000))} earned left`;
-  return s;
-}
+const runText = (now) => '● ' + fmtDur(now - state.timer.startedAt);
 function renderTimers() {
-  funBase = null;
-  if (goals && state.timer && goals.funCat() === state.timer.cat) funBase = goals.freeLeft(false);
   $('#timers').replaceChildren(
     h('div', { class: 'thead' }, 'Timers', h('button', { class: 'link', onclick: openCats }, 'Edit')),
     ...state.cats.map((c) => {
@@ -187,15 +178,19 @@ function renderGrid() {
   }
 }
 
-// ---- Goal bars: this week's hours for each active goal, on the Planner every day ----
+// ---- Goal bars: the week, each active goal's hours, and any missed session — on the Planner every day ----
 function renderStrip() {
   const el = $('#goalStrip'), bars = goals ? goals.bars(view) : [];
   el.hidden = !bars.length;
   if (!bars.length) { el.replaceChildren(); return; }
-  const wk = L.weekDays(view)[0], label = wk === L.weekDays(today())[0] ? 'This week' : `Week of ${fmtShort(wk)}`;
-  el.replaceChildren(h('span', { class: 'gsl' }, goals.isDeal(view) ? `${label} · deal` : label), ...bars.map((b) =>
-    h('button', { class: 'gsb' + (b.target && b.done >= b.target ? ' hit' : ''), style: `--c:${b.color}`, 'data-goal': b.id, 'aria-label': `${b.name}: ${fmtH(b.done)} of ${fmtH(b.target)} this week`, onclick: () => openStripPop(b.id) },
-      h('span', { class: 'gsn' }, b.name), h('span', { class: 'gbar' }, h('i', { style: `width:${Math.min(100, b.target ? (b.done / b.target) * 100 : 0)}%` })), h('b', {}, `${fmtH(b.done)} / ${fmtH(b.target)}`))));
+  const w = goals.week(view), cur = w.key === L.weekDays(today())[0], miss = cur ? goals.missed() : [];
+  const wkText = !cur ? `Week of ${fmtShort(w.key)} · ${fmtH(w.done)} / ${fmtH(w.target)}`
+    : !w.setup ? 'Set up your week' : w.claimed ? `★ ${w.reward || 'Earned'}` : w.hit ? `Claim: ${w.reward || 'your reward'}` : `${w.deal ? 'Deal week' : 'Week'} ${fmtH(w.done)} / ${fmtH(w.target)}${w.reward ? ` → ${w.reward}` : ''}`;
+  el.replaceChildren(
+    h('button', { class: 'gwk' + (cur && (!w.setup || (w.hit && !w.claimed)) ? ' go' : ''), id: 'weekChip', onclick: () => (cur && w.hit && !w.claimed ? goals.claim(w.key) : goals.openWeek(w.key)) }, wkText),
+    ...bars.map((b) => h('button', { class: 'gsb' + (b.target && b.done >= b.target ? ' hit' : ''), style: `--c:${b.color}`, 'data-goal': b.id, 'aria-label': `${b.name}: ${fmtH(b.done)} of ${fmtH(b.target)} this week`, onclick: () => openStripPop(b.id) },
+      h('span', { class: 'gsn' }, b.name), h('span', { class: 'gbar' }, h('i', { style: `width:${Math.min(100, b.target ? (b.done / b.target) * 100 : 0)}%` })), h('b', {}, `${fmtH(b.done)} / ${fmtH(b.target)}`))),
+    miss.length ? h('button', { class: 'gmiss', id: 'missChip', onclick: openMissed }, `${miss.length} missed`) : null);
 }
 function openStripPop(id) {
   const day = view, g = goals.active().find((x) => x.id === id);
@@ -204,18 +199,18 @@ function openStripPop(id) {
   const draw = () => {
     const b = goals.bars(day).find((x) => x.id === id);
     if (!b) return;
-    val.textContent = `${fmtH(goals.baseTarget(id, day))} a week`;
-    info.textContent = `${fmtH(b.done)} of ${fmtH(b.target)} this week${goals.isDeal(day) ? ' (deal week: a quarter of the usual)' : ''}`;
+    val.textContent = `${fmtH(goals.hoursOf(id))} a week`;
+    info.textContent = `${fmtH(b.done)} of ${fmtH(b.target)} this week`;
     renderStrip();
   };
-  const step = (d) => { const t = goals.baseTarget(id, day) + d; if (t < 15 || t > 2400) return; goals.setTarget(id, t, day); draw(); };
+  const step = (d) => { const t = goals.hoursOf(id) + d; if (t < 15 || t > 2400) return; goals.setHours(id, t); draw(); };
   const add = (m) => {
-    const cid = goals.addTime(id, m, day); draw();
-    toast(`Added ${fmtH(m)} to ${g.name}`, 'Undo', () => { goals.removeCheck(cid); renderStrip(); if (overlay && overlay.kind === 'gstrip') draw(); }, 5000);
+    const aid = goals.addTime(id, m, day); draw();
+    toast(`Added ${fmtH(m)} to ${g.name}`, 'Undo', () => { goals.removeAdd(aid); renderStrip(); if (overlay && overlay.kind === 'gstrip') draw(); }, 5000);
   };
   const el = h('div', { class: 'pop', role: 'dialog', 'aria-label': `${g.name} this week` },
     h('h3', {}, g.name), info,
-    stepRow('Target', val, () => step(-30), () => step(30)),
+    stepRow('Usual', val, () => step(-30), () => step(30)),
     h('p', { class: 'muted' }, 'Add time you didn’t log on the planner'),
     h('div', { class: 'row' }, [15, 30, 60].map((m) => h('button', { 'data-add': String(m), onclick: () => add(m) }, `+${fmtH(m)}`))),
     h('div', { class: 'row' },
@@ -223,6 +218,42 @@ function openStripPop(id) {
       h('button', { class: 'primary', onclick: () => { closeOverlay(); goals.open(id); } }, 'Details')));
   showOverlay(el, 'gstrip', `#goalStrip [data-goal="${CSS.escape(id)}"]`, false);
   draw();
+}
+// Missed a session? Deal with it right away: log it, move it to tomorrow, or skip it (2 skips per goal a week lower the target).
+function openMissed() {
+  const el = h('div', { class: 'pop', role: 'dialog', 'aria-label': 'Missed sessions' });
+  const done = (msg, undo) => { save(); draw(); render(); toast(msg, 'Undo', () => { undo(); save(); render(); if (overlay && overlay.el === el) draw(); }, 5000); };
+  const draw = () => {
+    const miss = goals.missed();
+    if (!miss.length) { if (overlay && overlay.el === el) closeOverlay(); return; }
+    el.replaceChildren(h('h3', {}, 'Missed this week'), h('p', { class: 'muted' }, 'Pick it back up. One miss doesn’t undo a habit.'),
+      ...miss.map(({ block: b, goal: id }) => {
+        const left = goals.skipsLeft(id, b.day);
+        return h('div', { class: 'gmissrow', 'data-id': b.id },
+          h('b', {}, `${b.title || catOf(b.cat).name}`), h('span', { class: 'muted' }, ` ${fmtWd(b.day)} · ${fmtT(b.day, b.start)} · ${goals.nameOf(id)} · ${left > 0 ? `${left} skip${left === 1 ? '' : 's'} left this week` : 'no skips left'}`),
+          h('div', { class: 'row' },
+            h('button', { onclick: () => {
+              const fit = L.clampFree(state.blocks, b.day, 'actual', b.start, b.end);
+              if (!fit) return toast('Actual time is already full there');
+              const a = { ...b, id: uid(), layer: 'actual', start: fit.start, end: fit.end, goal: id, seq: 0 };
+              state.blocks.push(a);
+              done(`Logged ${fmtH(a.end - a.start)} of ${a.title}`, () => { state.blocks = state.blocks.filter((x) => x.id !== a.id); });
+            } }, 'Did it'),
+            h('button', { onclick: () => {
+              const prev = { day: b.day }, nb = { ...b, day: L.addDays(b.day, 1) };
+              if (!L.overlaps(state.blocks, nb)) { b.day = nb.day; return done(`Moved to ${fmtWd(b.day)}`, () => { b.day = prev.day; }); }
+              const item = { id: uid(), text: (b.title || catOf(b.cat).name).slice(0, 200), min: Math.min(L.MAX_TASK, b.end - b.start), cat: b.cat, goal: id, at: Date.now() };
+              state.blocks = state.blocks.filter((x) => x !== b); state.lot.push(item);
+              done('Tomorrow’s taken there, so it’s in your Parking lot', () => { state.lot = state.lot.filter((x) => x.id !== item.id); state.blocks.push(b); });
+            } }, 'Tomorrow'),
+            h('button', { onclick: () => {
+              goals.skip(b, id, left <= 0);
+              done(left > 0 ? `Skipped. This week’s ${goals.nameOf(id)} target drops ${fmtH(b.end - b.start)}.` : 'Let go. Next one counts.', () => goals.unskip(b.id, b.day));
+            } }, left > 0 ? 'Skip' : 'Let it go')));
+      }));
+  };
+  draw();
+  showOverlay(el, 'gstrip', '#missChip', false);
 }
 
 const place = (el, s, e) => { el.style.top = (s / L.STEP) * SLOT_PX + 1 + 'px'; el.style.height = ((e - s) / L.STEP) * SLOT_PX - 2 + 'px'; };
@@ -683,6 +714,7 @@ function openFire() {
   };
   const el = h('div', { class: 'pop sheet center', role: 'dialog', 'aria-label': 'Fire drill' },
     h('h3', {}, 'Fire drill'),
+    ...(goals && goals.rough().length ? [h('p', { class: 'muted grough' }, h('b', {}, 'Rough-day versions still count: '), goals.rough().map((r) => `${r.goal}: ${r.text}`).join(' · '))] : []),
     h('p', { class: 'muted' }, 'Push the rest of today’s plan back by'),
     h('div', { class: 'seg' }, presets),
     stepRow('Custom', val, () => { if (delta > L.STEP) { delta -= L.STEP; sync(); } }, () => { if (delta < 600) { delta += L.STEP; sync(); } }),

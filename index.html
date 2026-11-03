@@ -279,7 +279,7 @@ body.dragging #scroller{touch-action:none}
 /* ---- Goals ---- */
 #goals{overflow-y:auto;padding:16px;-webkit-overflow-scrolling:touch;background:var(--bg);min-height:0}
 #goals>*{max-width:980px;margin-left:auto;margin-right:auto}
-#goals .k,.pop .gprow .k,.gms1 .k{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+#goals .k,.gsum .k{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 #goals input[type=text]{font:inherit;font-size:16px;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);min-width:0;width:100%}
 button.sm{min-height:36px;padding:0 12px;font-size:14px}
 .gsub{font-size:12px;color:var(--muted);margin:0}
@@ -287,32 +287,26 @@ button.sm{min-height:36px;padding:0 12px;font-size:14px}
 .gbar i{display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .2s}
 .ghead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .ghead h2{margin:0;font-size:20px}
-.gdeal{min-height:36px;font-size:14px}
-.gdeal.on{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,var(--panel));font-weight:600}
-.gsum{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:12px;flex-wrap:wrap}
-.gsumw{flex:1 1 300px;display:flex;align-items:center;gap:10px;min-width:0}
-.gsumw b,.gsumf b{font-variant-numeric:tabular-nums;white-space:nowrap}
-.gsumf{display:flex;align-items:center;gap:8px}
-.gopen{min-height:36px}
+.gsum{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:12px;flex-wrap:wrap}
+.gsum .gbar{flex:1 1 160px}
+.gsum b{font-variant-numeric:tabular-nums;white-space:nowrap}
 .ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:12px}
 .gcard{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-width:0}
-.gcard header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.gname{border:0;background:transparent;padding:0;min-height:32px;font-size:17px;font-weight:700;text-align:left;justify-content:flex-start}
+.gcard header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gname{border:0;background:transparent;padding:0;min-height:32px;font-size:17px;font-weight:700;text-align:left;justify-content:flex-start;margin-right:auto}
 .gchip{font-size:12px;font-weight:600;padding:2px 8px;border-radius:8px;background:color-mix(in srgb,var(--c) 16%,transparent);white-space:nowrap}
 .gweek{display:flex;align-items:center;gap:10px;font-size:13px}
 .gweek .gbar i,.gsb .gbar i{background:var(--c)}
 .gweek b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.gcue{margin:0;font-size:14px}
+.gms{display:flex;flex-direction:column;gap:6px}
+.gmsh{display:flex;align-items:center;gap:8px;font-size:14px}.gmsh>span{flex:1;min-width:0}
+.grw{color:var(--good);font-weight:600}
 .gnext{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:10px;padding:6px 10px;min-height:48px}
 .gnext p{margin:0;font-weight:600;font-size:15px;flex:1;min-width:0}
 .gnext.empty{padding:6px}
 .gtick{min-width:28px;width:28px;min-height:28px;height:28px;padding:0;border-radius:50%;border:2px solid var(--c,var(--accent));background:transparent;flex:none}
 .gtick:active{background:color-mix(in srgb,var(--c,var(--accent)) 30%,transparent)}
-.gprac{display:flex;flex-wrap:wrap;gap:6px}
-.gpbtn{min-height:40px;font-size:14px;border-radius:20px}
-.gpbtn small{color:var(--muted)}
-.gpbtn.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 18%,var(--panel));font-weight:600}
-.gms1{margin:0;font-size:13px;color:var(--fg)}
-.grw{color:var(--good);font-weight:600}
 .gmore{align-self:flex-start;min-height:32px;padding:0;font-size:14px}
 .gsome{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
 .gsome>button{align-self:flex-start}
@@ -326,7 +320,7 @@ button.sm{min-height:36px;padding:0 12px;font-size:14px}
 .gsheethead input{font-size:19px!important;font-weight:700}
 .gsheethead .seg{flex:none}
 .gsec{display:flex;flex-direction:column;gap:8px}
-.gsec h4,.gh4{margin:0;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.gsec h4{margin:0;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .glist{display:flex;flex-direction:column;gap:6px}
 .grow{display:flex;align-items:center;gap:8px}
 .grow input[type=text]{flex:1;min-width:0}
@@ -334,31 +328,38 @@ button.sm{min-height:36px;padding:0 12px;font-size:14px}
 .grow.sub input[type=date]{flex:0 0 150px;width:150px}
 .gmrow{display:flex;flex-direction:column;gap:4px;padding:6px 0;border-bottom:1px solid var(--line2)}
 .gmrow input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none}
-.gmrow.done input[type=text]{color:var(--muted)}
+.gmrow.done>.grow input[type=text]{color:var(--muted)}
+.gtasks{display:flex;flex-direction:column;gap:4px;padding-left:30px}
+.gtasks input[type=text]{min-height:38px!important;font-size:15px!important}
 .gx{min-width:36px;padding:0;color:var(--muted)}
-.gtag{font-size:11px;font-weight:700;color:var(--accent);min-width:36px;text-align:center}
-.gmorebox{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:10px}
+.gmorebox{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column}
 .gmorebox summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--accent);min-height:32px;display:flex;align-items:center}
-.gmorebox[open]{gap:12px}
 .gmorebox>*+*{margin-top:10px}
-.gprow{display:grid;grid-template-columns:110px minmax(60px,1fr) auto auto;align-items:center;gap:10px;font-size:14px;min-height:40px}
-.gprow b{font-variant-numeric:tabular-nums;white-space:nowrap}
-.gwn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gwrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:6px 0;border-bottom:1px solid var(--line2)}
+.gwrow .gwn{flex:1 1 200px;display:flex;align-items:center;gap:8px;min-width:0}
+.gwrow .step{flex:0 0 220px}
+.gsug{min-height:32px;padding:0;font-size:13px;font-weight:500;text-align:left}
+.gdeal{align-self:flex-start;min-height:36px;font-size:14px}
+.gdeal.on{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,var(--panel));font-weight:600}
 .gtpl{flex-direction:column;align-items:flex-start;text-align:left;padding:10px 14px;gap:2px;min-height:60px}
 .gtpl span{font-size:13px;color:var(--muted);font-weight:400}
-.gmenu{display:flex;flex-direction:column;gap:6px}
 .gta{font:inherit;font-size:16px;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);resize:vertical;font-weight:400}
 .pop input[type=date]{font:inherit;font-size:16px;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);width:100%;font-weight:400}
 .pop .fl .gsub,.pop .fl input{font-weight:400}
-.gstepr .lab{width:auto;flex:0 0 130px}
 .gtoward{display:flex;flex-direction:column;gap:6px}.gtoward .lab{font-size:13px;color:var(--muted)}
+.gmissrow{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid var(--line2)}
+.gmissrow .row button{padding:0 6px;font-size:14px}
+.grough{background:color-mix(in srgb,var(--good) 10%,transparent);border-radius:10px;padding:8px 10px}
 .item.shelf{border-style:dashed;border-left-style:solid}
 .gshelf h4 span:last-child{font-weight:400}
-/* Planner: goal bars */
+/* Planner: the week, goal bars, missed */
 #goalStrip{display:flex;align-items:center;gap:8px;padding:4px 10px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;min-width:0}
 #goalStrip::-webkit-scrollbar{display:none}
-.gsl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex:none}
-.gsb{position:relative;flex:1 1 0;min-width:170px;max-width:340px;min-height:38px;padding:0 10px 6px;gap:8px;justify-content:space-between;font-size:13px;border-radius:10px}
+#goalStrip>button{flex-shrink:0}
+.gwk,.gmiss{min-height:38px;padding:0 12px;font-size:13px;font-weight:600;white-space:nowrap;border-radius:10px}
+.gwk.go{background:var(--accent);border-color:var(--accent);color:#fff}
+.gmiss{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 12%,var(--panel))}
+.gsb{position:relative;flex:1 1 0!important;min-width:170px;max-width:300px;min-height:38px;padding:0 10px 6px;gap:8px;justify-content:space-between;font-size:13px;border-radius:10px}
 .gsb .gsn{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;text-align:left}
 .gsb .gbar{position:absolute;left:10px;right:10px;bottom:5px;height:4px;min-width:0}
 .gsb b{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px}
@@ -367,7 +368,7 @@ button.sm{min-height:36px;padding:0 12px;font-size:14px}
 .jgoals{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:-4px 0 14px}.jgoals .jl{width:100%;font-size:13px}
 .jgoals .jchip{text-align:left;white-space:normal;padding:6px 12px}
 .jcounted{margin:0 0 14px}
-@media (max-width:699px){#goals{padding:12px}.ggrid{grid-template-columns:1fr}.gprow{grid-template-columns:80px minmax(40px,1fr) auto;}.gprow>:nth-child(4){grid-column:1/-1;justify-self:start}.gsl{display:none}#goalStrip{padding:4px 8px;gap:6px}.gsb{flex:0 0 auto;min-width:0;max-width:220px}.gsheethead{flex-wrap:wrap}.grow.sub{flex-wrap:wrap}.grow.sub input[type=date]{flex:1 1 100%;width:100%}}
+@media (max-width:699px){#goals{padding:12px}.ggrid{grid-template-columns:1fr}#goalStrip{padding:4px 8px;gap:6px}.gsb{flex:0 0 auto!important;min-width:0;max-width:220px}.gsheethead{flex-wrap:wrap}.grow.sub{flex-wrap:wrap}.grow.sub input[type=date]{flex:1 1 100%;width:100%}.gwrow .step{flex:1 1 100%}}
 
 /* ---- Overlays ---- */
 #scrim{position:fixed;inset:0;z-index:20;display:none;background:transparent}
